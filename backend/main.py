@@ -917,6 +917,15 @@ app.include_router(create_model_benchmark_router(
     describe_error=_describe_error,
 ))
 
+# Additive partner stock projection: backend only until the group validates it; nothing official reads it.
+from backend.partner_stock_projection import create_partner_stock_projection_router  # noqa: E402
+
+app.include_router(create_partner_stock_projection_router(
+    dataset_loader=lambda: pipeline()[0],
+    settings_file=ROOT / "config/partner_projection.json",
+    describe_error=_describe_error,
+))
+
 # Additive run comparison: snapshots preserve forecast, recommendation and partner coverage as computed.
 from backend.run_comparisons import create_run_comparison_router  # noqa: E402
 from caderno_inteligente.run_comparison import build_comparison_payload  # noqa: E402
