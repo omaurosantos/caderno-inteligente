@@ -60,7 +60,7 @@ def create_model_benchmark_router(*, pipeline: Callable, source: Path, engine_co
             current_hash = source_hash()
         run = latest_benchmark_run(benchmark_db)
         if run is None:
-            benchmark = {"status": "no_run", "note": NO_RUN_NOTE, "run": None, "history": []}
+            benchmark = {"status": "no_run", "stale": None, "note": NO_RUN_NOTE, "run": None, "history": []}
         else:
             stale = run["source_hash"] != current_hash
             benchmark = {

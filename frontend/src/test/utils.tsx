@@ -14,6 +14,7 @@ type Value = unknown | ((url: URL, init?: RequestInit) => unknown);
 const ROUTES: Array<[string, RegExp]> = [
   ['validation', /^\/api\/validation\/summary$/],
   ['forecastLab', /^\/api\/forecast-lab$/],
+  ['modelBenchmark', /^\/api\/model-benchmark$/],
   ['runComparison', /^\/api\/run-comparisons$/],
   ['partnerSkus', /^\/api\/partners\/[^/]+\/skus$/],
   ['partnerDetail', /^\/api\/partners\/[^/]+$/],
@@ -42,7 +43,7 @@ const ROUTES: Array<[string, RegExp]> = [
 ];
 
 const DEFAULTS: Record<string, Value> = {
-  validation: fx.validationSummary, forecastLab: fx.forecastLab, runComparison: fx.runComparison, partnerSkus: fx.partnerRows, partnerDetail: fx.partnerDetail,
+  validation: fx.validationSummary, forecastLab: fx.forecastLab, modelBenchmark: fx.modelBenchmark, runComparison: fx.runComparison, partnerSkus: fx.partnerRows, partnerDetail: fx.partnerDetail,
   partners: fx.partnersPage, commercial: fx.partnerRows, priorities: fx.priorities, overview: fx.overview, forecasts: fx.forecasts, revenueForecast: fx.revenueForecast, capacityPlan: fx.capacityPlan, productionPlan: fx.productionPlan, events: fx.eventAnalysis,
   directChannels: fx.directChannels, directChannel: fx.directChannelDetail, channelFindings: { findings: fx.channelFindings },
   runs: fx.runs, system: fx.system, cases: fx.cases, feedback: fx.feedback, config: fx.config, quality: fx.quality, b2b: fx.b2b,

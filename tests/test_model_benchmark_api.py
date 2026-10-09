@@ -60,7 +60,7 @@ def test_card_error_matches_the_official_forecast(card):
 
 def test_without_database_benchmark_reports_no_run(tmp_path):
     body = _client(tmp_path / "missing.db").get("/api/model-benchmark").json()
-    assert body["benchmark"] == {"status": "no_run", "note": body["benchmark"]["note"], "run": None, "history": []}
+    assert body["benchmark"] == {"status": "no_run", "stale": None, "note": body["benchmark"]["note"], "run": None, "history": []}
     assert "benchmark_models.py" in body["benchmark"]["note"]
     assert not (tmp_path / "missing.db").exists()
 
