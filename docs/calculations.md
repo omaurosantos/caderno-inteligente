@@ -186,6 +186,14 @@ Janela de acúmulo (Etapa 15.5, 6 meses): `sell-through = sell-out ÷ sell-in`, 
 
 Sinais, limiares e precedência das ações estão em [regras comerciais](commercial-rules.md).
 
+### 5.1 Projeção de estoque no parceiro (`partner_stock_projection.py`, sem tela)
+
+- **Identidade:** `estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t)`. Ela fecha, com tolerância de 1 unidade, em 100% dos meses dos 50 pares da base.
+- **Sell-out previsto:** média dos últimos 6 meses do par. Foi a janela de menor erro entre último mês, 3 e 6 meses (origens fev a mai/2026, 3 meses à frente): sell-out 32,7% / 28,0% / 26,4% e sell-in 35,4% / 29,7% / 28,2%.
+- **Cenários:** com reposição (sell-in igual à média de 6 meses) e sem reposição (sell-in zero). O segundo não depende de prever sell-in.
+- **Saídas:** estoque projetado nos 3 meses seguintes ao último mês observado, mês de ruptura (primeiro mês com estoque ≤ 0), cobertura em dias (`estoque ÷ sell-out previsto/30`) e reposição até a cobertura-alvo de 30 dias ao fim do próximo mês.
+- **Limites:** 12 meses por par não permitem captar sazonalidade; só os 50 pares com sell-out (20% dos possíveis) têm projeção.
+
 ## 6. Central de validação (`validation_center.py`)
 
 - **Baseline de previsão:** repete o último mês observado antes de cada origem. Não participa da previsão. O modelo só "supera" a baseline com WAPE estritamente menor; empate conta como não superou.

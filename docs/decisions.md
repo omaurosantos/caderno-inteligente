@@ -162,3 +162,9 @@ Origem: reunião do grupo que pediu avaliar modelos de machine learning e dar tr
 - **Sem cron:** a base é uma planilha que muda pouco. A rodada é refeita quando a planilha muda, e a tela avisa quando a última rodada é de outra planilha.
 - **Modelo oficial mantido:** nenhum modelo superou o `seasonal_level` (8,0%) no protocolo de avaliação; o melhor foi AutoARIMA (13,3%) e o Prophet ficou em 36,4%. Detalhes em [cálculos](calculations.md#30-benchmark-de-modelos-model_benchmarkpy-fora-do-pipeline-oficial).
 - **Tela:** rota `/modelo` em Confiança, em aba ao lado da Validação, com orçamento de volume próprio, porque a Validação já usa quase todo o seu.
+
+## 2026-10-09 — Projeção de estoque no parceiro só no backend
+
+- **Escopo:** API pronta (`GET /api/partner-stock-projection`), sem tela, até o grupo validar.
+- **Método:** média de 6 meses para sell-out e sell-in, a de menor erro medida (26,4% e 28,2%). O cenário sem reposição acompanha o cenário com reposição porque não depende de prever sell-in.
+- **Erro sempre exposto:** os erros de sell-in e de sell-out saem em toda resposta, no agregado e por par, para a tela poder mostrar a incerteza se for aprovada.

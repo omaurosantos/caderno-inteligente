@@ -30,6 +30,7 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 | `partner_insights.py` | Pares parceiro–SKU reais, sinais e ações comerciais ([regras comerciais](commercial-rules.md)) |
 | `validation_center.py` | Linha de base, baseline de previsão, casos congelados e comportamento seguro ([Semana 4](semana-4-validacao-v2.md)) |
 | `run_comparison.py`, `runs.py` | Snapshot versionado e comparação entre execuções |
+| `partner_stock_projection.py` | Projeção de estoque no parceiro com erros de sell-in e sell-out; só API, sem tela |
 | `model_card.py` | Cartão do modelo oficial: o que prevê, premissas, erro e limitações |
 | `model_benchmark.py`, `benchmark_store.py` | Benchmark de modelos (statsforecast, scikit-learn, LightGBM, Prophet) contra o oficial e histórico das rodadas em SQLite local; fora do pipeline oficial |
 | `persistence.py`, `postgres_persistence.py`, `feedback.py`, `cases.py` | Mesmo contrato em SQLite e PostgreSQL |
@@ -41,7 +42,8 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
   - `partners.py`: visão comercial;
   - `validation.py`: Central de validação;
   - `run_comparisons.py`: comparação de execuções;
-  - `model_benchmark.py`: cartão do modelo e rodadas do benchmark.
+  - `model_benchmark.py`: cartão do modelo e rodadas do benchmark;
+  - `partner_stock_projection.py`: projeção de estoque no parceiro (sem tela).
 - `security.py` reúne:
   - ambiente (`APP_ENV`);
   - modo demonstração (`DEMO_MODE`);

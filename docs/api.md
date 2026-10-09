@@ -25,6 +25,7 @@ A API FastAPI expõe prioridades, previsão, recomendação, visão comercial, q
 | GET | `/api/partners/{codigo}` | Resumo do parceiro | — |
 | GET | `/api/partners/{codigo}/skus` | Matriz parceiro–SKU com evidências mensais | — |
 | GET | `/api/commercial-recommendations` | Sugestões comerciais entre parceiros | — |
+| GET | `/api/partner-stock-projection` | Projeção de estoque no parceiro por par parceiro–SKU, com erros de sell-in e sell-out (sem tela; aguarda validação do grupo) | — |
 | GET | `/api/validation/summary` | Central de validação da Semana 4 | — |
 | GET | `/api/forecast-lab` | Laboratório de previsão (Etapa 14.3): motor atual × motor rolante, avaliação aninhada e grade de sensibilidade; não altera nada oficial | — |
 | GET | `/api/model-benchmark` | Cartão do modelo oficial (o que prevê, premissas, erro) e última rodada do benchmark de modelos, com histórico | — |
@@ -198,6 +199,15 @@ Leitura aditiva para a aba Confiança › Modelo de previsão (`/modelo`). Não 
   - com rodada: `status = "ok"`, `stale` (o hash SHA-256 da planilha mudou desde a rodada) com `note`, `run` (`id`, `created_at`, `source_hash`, `protocol`, `environment`, `results[]`) e `history[]` (resumo de cada rodada, com o modelo de menor WAPE);
   - `results[]`: medidos primeiro, do menor para o maior WAPE; `unavailable` (biblioteca ausente) e `failed` (erro na execução) vêm por último, com `wape` nulo, nunca zero. Cada item traz `library_version`, `params`, `wape`, `peak_wape`, `normal_wape`, `bias`, `evaluated_points`, `fallback_points`, `duration_seconds`, `is_official` e `beats_official`.
 - O banco do benchmark é só SQLite local: na publicação da Vercel, `runtime/` não é enviado e o endpoint responde `no_run`.
+
+## `GET /api/partner-stock-projection`
+
+**Sem tela, aguardando validação do grupo.** Somente leitura; não alimenta ranking, recomendação comercial nem plano. Configuração: `config/partner_projection.json`.
+
+- Filtros opcionais `partner` e `sku` (até 40 letras, números, espaço, `_`, `.` ou `-`; fora disso, 422). Código sem sell-out informado devolve 404. Os erros agregados continuam os da base inteira quando há filtro.
+- `errors.sell_out` e `errors.sell_in`: `wape`, `bias` e `points` da média usada, medidos nas origens configuradas. Cada item traz os mesmos erros só do par, para a tela poder exibir a incerteza.
+- `items[]` por par: `current_stock`, `forecast_monthly_sell_out`, `coverage_days_now`, `replenishment_to_target`, `months` e `scenarios` (`with_replenishment` e `without_replenishment`, cada um com `monthly_sell_in`, `projected_stock[]`, `stockout_month` e `coverage_days_end`). Par com mês faltante na janela: `status = "insufficient_data"`, valores nulos e `reason`.
+- `method` (fórmulas e configuração), `pairs`, `pairs_with_projection`, `total`, `limitations`, `nature = "estimado"` e `requires_human_review = true`.
 
 ## Etapa 5 — `GET /api/validation/summary`
 
