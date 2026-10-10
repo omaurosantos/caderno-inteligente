@@ -48,8 +48,9 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 /** Título (h1 e aba do navegador) de cada rota. Um nome só por página. */
 export const navigation: Array<{ id: PageId; path: string; label: string; description: string }> = [
   { id: 'guide', path: '/guia', label: 'Guia de uso', description: 'Como usar o protótipo' },
-  { id: 'overview', path: '/', label: 'Início', description: 'O que olhar primeiro' },
+  { id: 'overview', path: '/', label: 'Início', description: 'Indicadores' },
   { id: 'queue', path: '/fila', label: 'Fila operacional', description: 'Qual SKU analisar, o que fazer e quanto' },
+  { id: 'skus', path: '/skus', label: 'SKUs', description: 'Lista completa de SKUs' },
   { id: 'revenue', path: '/faturamento', label: 'Faturamento previsto', description: 'Estimativa em reais para três meses' },
   { id: 'capacity', path: '/capacidade', label: 'Capacidade', description: 'Onde a produção planejada não cabe' },
   { id: 'cases', path: '/casos', label: 'Casos', description: 'Acompanhamento' },
@@ -65,10 +66,11 @@ export const navigation: Array<{ id: PageId; path: string; label: string; descri
   { id: 'audit', path: '/auditoria', label: 'Auditoria', description: 'Casos de teste, método e histórico' },
 ];
 
-/** Menu principal: 7 entradas (a Ajuda fica na barra superior). As rotas agrupadas continuam abrindo por URL e aparecem como abas (SubNav). */
+/** Menu principal: 8 entradas (a Ajuda fica na barra superior). As rotas agrupadas continuam abrindo por URL e aparecem como abas (SubNav). */
 export const menuGroups: Array<{ id: string; label: string; to: string; paths: string[] }> = [
   { id: 'home', label: 'Início', to: '/', paths: ['/'] },
-  { id: 'production', label: 'Planejamento', to: '/fila', paths: ['/fila', '/capacidade', '/cenarios', '/prioridades', '/previsoes', '/skus'] },
+  { id: 'production', label: 'Planejamento', to: '/fila', paths: ['/fila', '/capacidade', '/cenarios', '/prioridades', '/previsoes'] },
+  { id: 'skus', label: 'SKUs', to: '/skus', paths: ['/skus'] },
   { id: 'finance', label: 'Financeiro', to: '/faturamento', paths: ['/faturamento'] },
   { id: 'partners', label: 'Comercial', to: '/parceiros', paths: ['/parceiros', '/carteira', '/canais'] },
   { id: 'decisions', label: 'Acompanhamento', to: '/casos', paths: ['/decisoes', '/casos'] },
@@ -200,6 +202,20 @@ export function confidenceTone(confidence: string) {
 /** Sinal que mais pesa no score (o primeiro da lista da API é só a ordem alfabética dos códigos). */
 export function mainReason(reasons: Priority['reasons'], weights?: Record<string, number>) {
   return sortReasons(reasons, weights)[0];
+}
+
+/** Sinais de risco de ruptura, os mesmos que o backend conta em rupture_sku_count. */
+export const RUPTURE_CODES = ['RUP_LEAD_TIME', 'RUP_SAFETY_STOCK'];
+export const hasRuptureRisk = (reasons: Priority['reasons'] = []) => reasons.some((reason) => RUPTURE_CODES.includes(reason.code));
+
+/** Navegação entre páginas de uma lista; some quando tudo cabe em uma página. */
+export function Pagination({ page, pages, onChange, label }: { page: number; pages: number; onChange: (page: number) => void; label: string }) {
+  if (pages <= 1) return null;
+  return <nav className="pagination" aria-label={label}>
+    <button type="button" className="secondary-button" onClick={() => onChange(page - 1)} disabled={page <= 1}>Anterior</button>
+    <span role="status">Página {page} de {pages}</span>
+    <button type="button" className="secondary-button" onClick={() => onChange(page + 1)} disabled={page >= pages}>Próxima</button>
+  </nav>;
 }
 
 export function MetricCard({ label, value, detail, tone = 'blue', icon }: { label: ReactNode; value: ReactNode; detail: string; tone?: string; icon: IconName }) {

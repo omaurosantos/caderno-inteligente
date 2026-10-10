@@ -82,7 +82,7 @@ Compara a previsão oficial com statsforecast, scikit-learn, LightGBM e Prophet 
 
 ## Interface
 
-O menu tem 7 entradas (Início, Planejamento, Financeiro, Comercial, Acompanhamento, Confiança, Bastidores) e o botão **Ajuda** (guia) na barra superior. As rotas agrupadas aparecem como abas e continuam abrindo por URL. Não há grupo "Avançado": Cenários fica em Planejamento e Execuções em Confiança.
+O menu tem 8 entradas (Início, Planejamento, SKUs, Financeiro, Comercial, Acompanhamento, Confiança, Bastidores) e o botão **Ajuda** (guia) na barra superior. As rotas agrupadas aparecem como abas e continuam abrindo por URL. Não há grupo "Avançado": Cenários fica em Planejamento e Execuções em Confiança.
 
 | URL | Menu · página |
 |---|---|
@@ -153,7 +153,11 @@ Variáveis de ambiente do backend (exemplo em `.env.example`):
 | `CORS_ORIGINS` | `localhost:5173` e `127.0.0.1:5173` em desenvolvimento | Origens exatas, sem caminho e sem curinga. Em produção, sem valor, nenhuma origem externa é aceita |
 | `APP_ENV` | `development` | `production` retorna erros genéricos com código de referência |
 | `DEMO_MODE` | `false` | `true` exibe aviso de dados fictícios que podem ser apagados |
-| `WRITE_ENABLED` | `true` | `false` bloqueia decisões, casos e execuções (403); consultas e simulações continuam |
+| `WRITE_ENABLED` | `true` | `false` bloqueia decisões, casos, execuções e cadastro de SKU (403); consultas e simulações continuam |
+| `DATA_SOURCE` | `planilha` | `banco` lê as abas do banco (importadas com `scripts/import_workbook.py`) e habilita o cadastro de SKU ([fase 3](docs/fase-3-banco-e-cadastro.md)) |
+| `AUTH_REQUIRED` | `false` | `true` exige login no cadastro de SKU. Por enquanto, o cadastro fica liberado |
+| `AUTH_SECRET` | — | Secreta (32+ caracteres). Assina o login do cadastro de SKU; em produção, sem ela o login fica desligado |
+| `AUTH_TOKEN_HOURS` | `8` | Validade da sessão de login (1 a 24 h) |
 | `LOG_LEVEL` | `INFO` | Nível de log; os logs nunca imprimem `DATABASE_URL` |
 
 No frontend, `VITE_API_URL` é a URL pública da API (com `https://`). Sem ela, o frontend usa `/api`. O cache do backend é invalidado automaticamente quando a planilha ou os arquivos de pesos e limiares mudam. Nunca versione arquivos `.env` reais.
@@ -169,7 +173,7 @@ O deploy usa dois projetos Vercel do mesmo repositório:
 
 Antes de publicar:
 
-1. execute `supabase/migrations/001_initial.sql`, `002_run_comparison.sql` e `003_challenge_action.sql` no Supabase, nessa ordem;
+1. execute `supabase/migrations/001_initial.sql`, `002_run_comparison.sql`, `003_challenge_action.sql` e `004_dataset_and_auth.sql` no Supabase, nessa ordem (a 004 só é usada com `DATA_SOURCE=banco`);
 2. configure no backend `DATABASE_URL` (Transaction Pooler, porta 6543), `CORS_ORIGINS` com o domínio exato do frontend e `APP_ENV=production`;
 3. se for demonstração aberta, configure também `DEMO_MODE=true` e, opcionalmente, `WRITE_ENABLED=false`;
 4. configure no frontend `VITE_API_URL` com a URL do backend seguida de `/api`.
@@ -197,6 +201,7 @@ Passo a passo completo em [Deploy com Vercel e Supabase](docs/deploy-vercel-supa
 - [Cálculos](docs/calculations.md), [regras](docs/rules.md), [priorização](docs/prioritization.md) e [regras comerciais](docs/commercial-rules.md)
 - [Decisões técnicas](docs/decisions.md)
 - [Deploy com Vercel e Supabase](docs/deploy-vercel-supabase.md)
+- [Fase 3: base no banco, login e cadastro de SKU](docs/fase-3-banco-e-cadastro.md)
 
 **Histórico**
 

@@ -19,9 +19,11 @@ describe('Fila operacional: produção planejada por mês', () => {
     expect(image.getAttribute('aria-label')).toMatch(/set\/26: 200 un\. \(200 un\. agora\)/);
     expect(image.getAttribute('aria-label')).toMatch(/Plano sugerido, não ordem liberada/);
     // Barras cheias só nos meses com urgente; tracejadas só nos meses com o resto; mês sem ordens não ganha barra.
-    expect(chart.querySelectorAll('rect.revenue-bar:not(.revenue-bar-estimated)')).toHaveLength(1);
-    expect(chart.querySelectorAll('rect.revenue-bar-estimated')).toHaveLength(2);
-    expect(chart.querySelectorAll('text.revenue-axis')).toHaveLength(productionPlan.total.months.length);
+    expect(chart.querySelectorAll('.revenue-bar:not(.revenue-bar-estimated)')).toHaveLength(1);
+    expect(chart.querySelectorAll('.revenue-bar-estimated')).toHaveLength(2);
+    // Eixo X com um mês por barra; eixo Y com valores em unidades.
+    expect(chart.querySelectorAll('.recharts-xAxis-tick-labels text.chart-tick')).toHaveLength(productionPlan.total.months.length);
+    expect(chart.querySelectorAll('.recharts-yAxis-tick-labels text.chart-tick').length).toBeGreaterThanOrEqual(2);
   });
 
   it('o total de agora é a soma sugerida da fila e os meses omitidos aparecem na tela', async () => {
@@ -60,13 +62,13 @@ describe('Fila operacional: produção planejada por mês', () => {
     renderApp('/fila');
     expect(await screen.findByText('Produção planejada indisponível')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
-    expect(await screen.findByText(SKU_OK)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` })).toBeInTheDocument();
   });
 
   it('enquanto calcula, a fila já aparece', async () => {
     mockApi({ productionPlan: pending() });
     renderApp('/fila');
-    expect(await screen.findByText(SKU_OK)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` })).toBeInTheDocument();
     expect(within(await card()).getByText('Calculando…')).toBeInTheDocument();
   });
 

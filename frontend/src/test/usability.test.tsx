@@ -65,7 +65,7 @@ describe('fila operacional enxuta', () => {
     const user = userEvent.setup();
     mockApi();
     renderApp('/fila');
-    await screen.findByText(SKU_OK);
+    await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` });
     expect(screen.queryByText('Ver sinais, data e lacuna')).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: /Fila operacional/ })).getAllByRole('columnheader').filter((header) => !header.querySelector('.sr-only'))).toHaveLength(5);
     await user.click(screen.getByRole('button', { name: `Ver detalhes de ${SKU_OK}` }));

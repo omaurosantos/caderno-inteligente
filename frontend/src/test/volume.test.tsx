@@ -5,7 +5,7 @@ import { mockApi, renderApp } from './utils';
 
 // Teste de volume: mede palavras, números, blocos, colunas e avisos de cada tela (tudo expandido) e falha acima do orçamento.
 // Texto só para leitor de tela (.sr-only) e o conteúdo dos "?" não contam.
-const WRAPPERS = /(decision-journey|sku-detail-page|operational-queue|revenue-page|validation-page|guide-page|feedback-layout|scenario-layout)/;
+const WRAPPERS = /(decision-journey|sku-detail-page|sku-list-page|operational-queue|revenue-page|validation-page|guide-page|feedback-layout|scenario-layout)/;
 const SKIP = /(rule-line|subnav|page-intro|system-banner)/;
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
@@ -32,6 +32,8 @@ function measure(main: Element) {
   tables.forEach((table) => table.remove());
   evidences.forEach((node) => node.closest('tr')?.remove());
   copy.querySelectorAll('.evidence-body').forEach((node) => node.remove());
+  // Valores dos eixos dos gráficos são escala, lida de relance como as células de tabela (que também saem da contagem de prosa).
+  copy.querySelectorAll('.recharts-cartesian-axis-tick-labels').forEach((node) => node.remove());
   const prose = (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
   const root = [...main.children].map((child) => WRAPPERS.test(child.className.toString()) ? [...child.children] : [child]).flat().filter((child) => !SKIP.test(child.className.toString()) && visibleText(child));
   const alerts = main.querySelectorAll('.ui-alert, .rule-line, .human-review-line, .human-review, .verdict, .details-note').length;

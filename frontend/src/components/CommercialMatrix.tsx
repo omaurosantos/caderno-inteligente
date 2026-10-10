@@ -112,20 +112,20 @@ export function CommercialMatrix({ response }: { response: CommercialPage<Commer
   const columns = uniform ? 5 : 6;
   const empty = <EmptyState title="Nenhum vínculo neste recorte" description="Ajuste os filtros. Não são criadas combinações entre todos os parceiros e todos os SKUs." />;
   // Dica do rótulo comum sem as evidências de uma linha só: elas ficam na evidência de cada linha.
-  const sharedAction = shared ? <ChallengeBadge action={{ ...shared, evidence: [] }} /> : undefined;
+  const sharedAction = shared ? <span className="revenue-card-tag"><ChallengeBadge action={{ ...shared, evidence: [] }} /></span> : undefined;
   return <>
     <SectionCard title="Matriz parceiro–SKU" action={sharedAction}>
       {!response.items.length ? empty : mobile ? <ul className="opp-list" aria-label="Oportunidades por parceiro e SKU">{response.items.map(row => <OpportunityCard key={rowKey(row)} row={row} uniform={uniform} hideLabel={!!shared} expanded={isOpen(rowKey(row))} onToggle={() => toggle(rowKey(row))} />)}</ul>
-      : <div className="table-shell" tabIndex={0} role="region" aria-label="Matriz comercial; role horizontalmente para ver todas as colunas"><table className="data-table commercial-table responsive-table"><thead><tr><th>Parceiro / SKU</th>{!uniform && <th>Ação comercial</th>}<th>Estoque estimado (un.)</th><th>Cobertura de estoque (dias)</th><th>Vende por mês (un.) <Hint term="sellout" /></th><th><span className="sr-only">Evidências</span></th></tr></thead><tbody>{response.items.map(row => {
+      : <div className="table-shell" tabIndex={0} role="region" aria-label="Matriz comercial por parceiro e SKU"><table className={`data-table commercial-table responsive-table ${uniform ? '' : 'has-action'}`}><thead><tr><th>Parceiro / SKU</th>{!uniform && <th>Ação comercial</th>}<th className="num">Estoque estimado (un.)</th><th className="num">Cobertura de estoque (dias)</th><th className="num">Vende por mês (un.) <Hint term="sellout" /></th><th className="cell-action"><span className="sr-only">Evidências</span></th></tr></thead><tbody>{response.items.map(row => {
         const key = rowKey(row);
         const expanded = isOpen(key);
         return [
           <tr key={key} className={expanded ? 'is-expanded' : ''}>
             <td data-label="Parceiro / SKU"><Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link><br /><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link><small>{row.product}</small>{!shared && <ChallengeBadge action={row.challenge_action} />}</td>
             {!uniform && <td className="cell-stack" data-label="Ação comercial"><strong className="commercial-action">{row.action_label}</strong>{row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}<BuildupBadge row={row} /></td>}
-            <td data-label="Estoque estimado">{displayNumber(row.estimated_stock)}</td>
-            <td data-label="Cobertura de estoque">{displayDays(row.coverage_days)}</td>
-            <td data-label="Vende por mês">{displayNumber(row.average_monthly_sell_out)}</td>
+            <td className="num" data-label="Estoque estimado">{displayNumber(row.estimated_stock)}</td>
+            <td className="num" data-label="Cobertura de estoque">{displayDays(row.coverage_days)}</td>
+            <td className="num" data-label="Vende por mês">{displayNumber(row.average_monthly_sell_out)}</td>
             <td className="cell-action"><button type="button" className="secondary-button evidence-toggle" aria-expanded={expanded} aria-label={`Evidências de ${row.partner} · ${row.sku} — ${row.action_label}`} onClick={() => toggle(key)}>{expanded ? 'Ocultar evidências' : 'Ver evidências'}</button></td>
           </tr>,
           expanded && <tr key={`${key}-evidence`} className="evidence-row"><td colSpan={columns}><Evidence row={row} /></td></tr>,

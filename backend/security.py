@@ -138,6 +138,14 @@ def write_guard(settings_provider):
     return require_write_access
 
 
+def clean_text(value: str) -> str:
+    """Trim and reject control characters (line breaks and tabs are allowed in free text)."""
+    value = value.strip()
+    if any((ord(char) < 32 and char not in "\n\t\r") or ord(char) == 127 for char in value):
+        raise ValueError("Texto contém caracteres de controle não permitidos")
+    return value
+
+
 def public_message(settings: Settings, message: str, error: Exception) -> str:
     """Development keeps the technical cause; production returns only the generic message and logs the cause."""
     if settings.production:

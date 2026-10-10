@@ -178,6 +178,22 @@ Soma as ordens planejadas do plano de suprimento pelo mês de liberação (`rele
 
 SKU sem previsão não tem plano: fica fora da soma e é listado. As OPs já abertas não entram (usam a data de conclusão, não a de liberação), e a soma não desconta a capacidade das linhas (seção 4.1).
 
+### 4.3 Estoque projetado no Início (`projected_stock.py`)
+
+Conta SKUs a partir da projeção semanal da seção 4 (`min_projected` e `min_projected_with_plan` de cada semana), sem cálculo novo, em duas leituras:
+
+```text
+sem novas ordens = estoque atual + OPs abertas − demanda
+com o plano      = estoque atual + OPs abertas + ordens planejadas − demanda
+falta            = SKU com estoque projetado < 0 em alguma semana do horizonte
+abaixo da segurança = SKU com estoque projetado < segurança em alguma semana (inclui os com falta)
+primeira semana de falta = a mais cedo entre os SKUs com falta
+```
+
+A falta que sobra **com o plano** é a que as ordens planejadas não alcançam: antes da chegada mais cedo de uma reposição nova (data de planejamento + lead time, o caso de `atraso_inevitavel`) ou antes de uma OP aberta que já cobre a necessidade logo depois (o caso de `antecipar_op`, quando a OP ainda pode ser antecipada). A conta não considera a antecipação: mostra a falta enquanto ela não for decidida. A produção planejada repete os totais da seção 4.2 (`urgent_total` e `horizon_total`). SKU sem previsão fica fora da conta e é listado.
+
+Na base atual (50 SKUs, horizonte em 28/02/2027): 44 SKUs ficam com falta sem novas ordens, a partir da semana de 14/09/2026; com o plano, 22 ainda ficam com falta e 33 abaixo da segurança; produção planejada de 22.900 un. com liberação até 12/10/2026 e 139.300 un. no horizonte.
+
 ## 5. Visão comercial parceiro–SKU (`partner_insights.py`)
 
 Usa apenas chaves reais parceiro–SKU–mês. O estoque considerado é o estoque estimado do último sell-out do próprio parceiro, nunca o estoque do CD. Cobertura no parceiro = `estoque estimado / (média mensal de sell-out / 30)`; giro zero ou ausente gera cobertura `null`.

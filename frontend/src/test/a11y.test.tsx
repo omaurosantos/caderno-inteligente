@@ -9,7 +9,7 @@ import { mockApi, renderApp } from './utils';
 const OPTIONS: axe.RunOptions = { rules: { 'color-contrast': { enabled: false } }, resultTypes: ['violations'] };
 
 const PAGES: Array<[string, string]> = [
-  ['/', 'O que olhar primeiro'],
+  ['/', 'Indicadores'],
   ['/guia', 'Entenda o Caderno Inteligente em poucos minutos'],
   ['/fila', 'Qual SKU analisar, o que fazer e quanto'],
   ['/faturamento', 'Quanto se estima faturar nos próximos três meses'],

@@ -10,6 +10,7 @@ import type { ProductionPlan } from '../types-production';
 import type { RevenueForecast, RevenueItem } from '../types-revenue';
 import type { RunComparison } from '../types-runs';
 import type { ValidationSummary } from '../types-validation';
+import type { SessionUser, SkuRegistry, SkuRegistryItem } from '../types-registry';
 import type { SystemInfo } from '../hooks/useSystemInfo';
 
 export const SKU_OK = 'TEST-001';
@@ -39,6 +40,26 @@ export const overview: Overview = {
   total_skus: 4, prioritized: 3, rupture_sku_count: 2, below_lead_time_count: 2, below_safety_stock_count: 1, rupture_signal_count: 3,
   risk_count: 2, order_without_production: 1, excess_count: 0, low_confidence: 1, decision_count: 0, partner_data_influenced_decision_count: 0,
   risk_distribution: { RUP_LEAD_TIME: 2, RUP_SAFETY_STOCK: 1 }, confidence_distribution: { média: 2, baixa: 1 },
+  projected_stock: {
+    reference_date: '2026-09-14', horizon_end: '2027-02-28', skus_evaluated: 3,
+    without_new_orders: { shortfall_sku_count: 2, below_safety_sku_count: 3, first_shortfall_week: '2026-09-21' },
+    with_planned_orders: { shortfall_sku_count: 1, below_safety_sku_count: 2, first_shortfall_week: '2026-09-21' },
+    shortfall_skus: [
+      { sku: SKU_OK, product: `Produto ${SKU_OK}`, family: 'Família A', first_shortfall_date: '2026-09-23', first_shortfall_week: '2026-09-21', shortfall_with_plan: true },
+      { sku: 'TEST-003', product: 'Agenda sintética', family: 'Família A', first_shortfall_date: '2026-11-04', first_shortfall_week: '2026-11-02', shortfall_with_plan: false },
+    ],
+    planned_production: { urgent_total: 1200, horizon_total: 5400, urgent_window_end: '2026-10-12' },
+    // Coerente com shortfall_skus: TEST-001 falta a partir de 21/09 (mesmo com o plano); TEST-003 a partir de 02/11, só sem novas ordens.
+    weekly: [
+      { week_start: '2026-09-14', shortfall_sku_count: 0, shortfall_with_plan_sku_count: 0 },
+      { week_start: '2026-09-21', shortfall_sku_count: 1, shortfall_with_plan_sku_count: 1 },
+      { week_start: '2026-10-26', shortfall_sku_count: 1, shortfall_with_plan_sku_count: 0 },
+      { week_start: '2026-11-02', shortfall_sku_count: 2, shortfall_with_plan_sku_count: 0 },
+    ],
+    excluded_skus: [{ sku: SKU_SHORT, reason: 'sem_previsao' }],
+    limitations: ['Estoque projetado é estimativa.'],
+    requires_human_review: true,
+  },
 };
 
 export const quality: DataQuality = {
@@ -375,7 +396,7 @@ export const runComparison: RunComparison = {
 };
 
 export const system: SystemInfo = {
-  environment: 'development', demo_mode: false, write_enabled: true, notice: null,
+  environment: 'development', demo_mode: false, write_enabled: true, notice: null, data_source: 'planilha', auth_enabled: true, auth_required: true,
   text_limits: { note: 2000, user_name: 80, owner: 80, case_action: 200, analysis_minutes: 1440 },
 };
 
@@ -408,6 +429,17 @@ export const productionPlan: ProductionPlan = {
   field_nature: { urgent: { nature: 'estimado', origin: 'ordens planejadas com liberação dentro da janela de decisão' }, later: { nature: 'estimado', origin: 'ordens planejadas com liberação depois da janela de decisão' } },
   limitations: ['Plano sugerido, não ordem liberada: cada ordem exige revisão humana antes de virar OP.'],
   requires_human_review: true,
+};
+
+// Fase 3: login e cadastro de SKU (só aparecem com data_source = 'banco').
+export const sessionUser: SessionUser = { email: 'pcp@exemplo.com', name: 'Ana PCP' };
+const registryItem = (sku: string, produto: string, ativo = true): SkuRegistryItem => ({
+  sku, produto, familia: 'Escolar', curva_abc: 'A', lead_time_dias: 14, lote_minimo: 300, estoque_atual: 90,
+  estoque_seguranca_dias: 7, venda_media_dia: 5, ativo, atualizado_em: null, atualizado_por: null,
+});
+export const skuRegistry: SkuRegistry = {
+  data_source: 'banco', editable: true, families: ['Escolar', 'Premium'],
+  items: [registryItem(SKU_OK, 'Produto sintético A'), registryItem('OLD-009', 'Produto descontinuado', false)],
 };
 
 const benchmarkResult = (model: string, label: string, wape: number | null, extra: Partial<BenchmarkResult> = {}): BenchmarkResult => ({

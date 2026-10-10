@@ -7,8 +7,8 @@ A API FastAPI expõe prioridades, previsão, recomendação, visão comercial, q
 | Método | Rota | Finalidade | Grava dados |
 |---|---|---|---|
 | GET | `/api/health` | Fonte, banco, persistência e cache | — |
-| GET | `/api/system` | Ambiente, modo demonstração, escrita habilitada e limites de texto | — |
-| GET | `/api/overview` | Indicadores da visão geral | — |
+| GET | `/api/system` | Ambiente, modo demonstração, escrita habilitada, fonte dos dados (`data_source`), login configurado (`auth_enabled`) e limites de texto | — |
+| GET | `/api/overview` | Indicadores da visão geral, inclusive o estoque projetado (`projected_stock`) | — |
 | GET | `/api/priorities` | Ranking oficial (`family`, `confidence`, `search`) | — |
 | GET | `/api/priorities/{sku}` | Detalhe: indicador, sinais, contribuições, previsão, faturamento estimado (`revenue_forecast`), eventos (`event_alerts`, `event_scenario`) e recomendação | — |
 | GET | `/api/forecasts` | Previsão e recomendação resumida de todos os SKUs | — |
@@ -38,8 +38,13 @@ A API FastAPI expõe prioridades, previsão, recomendação, visão comercial, q
 | POST | `/api/runs` | Registra snapshot auditável | sim (403 com `WRITE_ENABLED=false`) |
 | POST | `/api/cases` · PUT `/api/cases/{id}` | Cria/atualiza caso | sim (403 com `WRITE_ENABLED=false`) |
 | POST | `/api/feedback` | Registra decisão humana | sim (403 com `WRITE_ENABLED=false`) |
+| POST | `/api/auth/login` | Login (fase 3): devolve `token`, `expires_at` e `user` | — |
+| GET | `/api/auth/me` | Usuário do token | — |
+| GET | `/api/skus/cadastro` | Cadastro de SKUs, inclusive os excluídos (`ativo`), e famílias válidas; exige login | — |
+| POST | `/api/skus` · PUT `/api/skus/{sku}` | Cria/edita SKU (`Produtos`, `Estoque_Atual`, `Lead_Times`) | sim (login, `DATA_SOURCE=banco`, `WRITE_ENABLED`) |
+| POST | `/api/skus/{sku}/excluir` · `/api/skus/{sku}/reativar` | Exclusão lógica e reativação | sim (login, `DATA_SOURCE=banco`, `WRITE_ENABLED`) |
 
-Respostas de erro usam `{"detail": ...}`: 404 para recurso inexistente, 403 para escrita desabilitada, 413 para corpo acima de 16 KB, 422 para validação e 500 com código de referência (`X-Request-ID`).
+Respostas de erro usam `{"detail": ...}`: 401 sem login válido, 404 para recurso inexistente, 403 para escrita desabilitada, 409 para conflito (SKU já existente ou base na planilha), 429 para tentativas de login em excesso, 503 para login não configurado, 413 para corpo acima de 16 KB, 422 para validação e 500 com código de referência (`X-Request-ID`).
 
 ## `GET /api/health`
 
@@ -62,6 +67,19 @@ As métricas de ruptura distinguem SKUs únicos de ocorrências de regras:
 - `risk_count`: alias temporário e compatível de `rupture_sku_count`.
 
 Um SKU que aciona as duas regras contribui uma única vez para `rupture_sku_count` e duas vezes para `rupture_signal_count`.
+
+### `projected_stock`
+
+Estoque projetado no horizonte da previsão, agregado da projeção semanal do plano de suprimento (Etapa 15.3). Camada derivada e somente leitura, sem cálculo novo: não altera projeção, ação, quantidade, score nem ranking. Alimenta o bloco "Estoque projetado" do Início. Regra em [calculations.md](calculations.md), seção 4.3.
+
+- `without_new_orders` (só estoque atual e OPs abertas) e `with_planned_orders` (somando as ordens planejadas): `shortfall_sku_count` (SKUs com estoque projetado negativo em alguma semana), `below_safety_sku_count` (abaixo do estoque de segurança em alguma semana, **incluindo** os com falta) e `first_shortfall_week` (segunda-feira da primeira semana com falta, ou `null`);
+- `shortfall_skus[]` (`sku`, `product`, `family`, `first_shortfall_date`, `first_shortfall_week`, `shortfall_with_plan`): SKUs com falta sem novas ordens, da falta mais próxima para a mais distante;
+- `planned_production`: `urgent_total` e `horizon_total`, os mesmos totais de `GET /api/production-plan`, e `urgent_window_end`;
+- `weekly[]` (`week_start`, `shortfall_sku_count`, `shortfall_with_plan_sku_count`): quantos SKUs estão em falta em cada semana, sem novas ordens e com o plano (gráfico "SKUs em falta por semana" do Início). Só entram as semanas presentes na projeção de todos os SKUs avaliados, para uma semana além do horizonte de algum SKU não parecer melhora. Lista vazia quando nenhum SKU tem previsão;
+- `excluded_skus[]` (`sku`, `reason = sem_previsao`): fora da conta, nunca contados como "sem falta";
+- `reference_date`, `horizon_end`, `skus_evaluated`, `limitations` e `requires_human_review = true`.
+
+`projected_stock` é `null` se a agregação falhar; os demais campos do `/api/overview` não são afetados.
 
 ## `GET /api/forecasts`
 
@@ -270,8 +288,19 @@ Com `WRITE_ENABLED=false`, `POST /api/feedback`, `POST /api/cases`, `PUT /api/ca
 - Toda resposta traz `X-Request-ID`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer`.
 - Erro não tratado retorna 500 com `detail` contendo o código de referência. Em `APP_ENV=production` a mensagem é genérica; em desenvolvimento inclui o tipo e a mensagem, já sem connection strings.
 - Em produção, erros 422 de validação retornam somente `type`, `loc` e `msg`, sem ecoar o valor enviado.
-- CORS aceita apenas as origens válidas de `CORS_ORIGINS`, os métodos GET, POST, PUT e OPTIONS e o cabeçalho `Content-Type`, sem credenciais.
+- CORS aceita apenas as origens válidas de `CORS_ORIGINS`, os métodos GET, POST, PUT e OPTIONS e os cabeçalhos `Content-Type` e `Authorization` (fase 3), sem cookies.
 
 ## Etapa de usabilidade — sem mudança de contrato
 
 A etapa de usabilidade ([histórico](historico.md)) não adicionou, removeu nem alterou campos ou rotas. A interface passou a usar rotas que já existiam: `GET /api/config` (pesos, para ordenar os sinais por peso) em `/` e `/prioridades`, `GET /api/commercial-recommendations?action=avaliar_reposicao` na lista de oportunidades de `/parceiros` e `score_contributions` de `GET /api/priorities/{sku}` (decomposição do score). A etapa de enxugamento (`docs/etapa-enxugamento.md`) também não alterou contratos: a página `/auditoria` usa `GET /api/validation/summary` e `GET /api/partners?limit=1` (método comercial), e vários campos deixaram de ser exibidos sem deixar de existir.
+
+## Fase 3 — Login e cadastro de SKU
+
+Detalhes, decisões e passo a passo em [fase-3-banco-e-cadastro.md](fase-3-banco-e-cadastro.md).
+
+- `POST /api/auth/login` recebe `{email, password}`. Responde 401 se a senha estiver errada, 429 depois de 5 falhas em 10 minutos e 503 em produção sem `AUTH_SECRET`.
+- Com `AUTH_REQUIRED=true`, as rotas de cadastro exigem `Authorization: Bearer <token>`; sem token válido, ou com usuário inativo, respondem 401. Com `AUTH_REQUIRED=false` (padrão atual), as rotas ficam liberadas e as alterações são registradas como `sem-login`. `GET /api/system` informa o modo em `auth_required`.
+- `POST /api/skus` recebe `sku`, `produto`, `familia` (uma família da base), `curva_abc` (`A`, `B` ou `C`), `lead_time_dias`, `lote_minimo`, `estoque_atual`, `estoque_seguranca_dias` e `venda_media_dia`, todos não negativos. Responde 201 com `{sku, version}`. `PUT /api/skus/{sku}` recebe os mesmos campos, sem `sku`. Campos desconhecidos dão 422.
+- Toda gravação é validada com `validate_dataset` na prévia da base inteira; um erro que a base não tinha antes dá 422. SKU duplicado (ativo ou inativo) dá 409.
+- Com `DATA_SOURCE=planilha`, as gravações respondem 409 e `GET /api/skus/cadastro` retorna `editable: false`.
+- A exclusão é lógica e usa POST, não DELETE: o SKU sai de todos os cálculos, e casos, decisões e execuções que o citam continuam. Excluir um SKU já excluído (ou reativar um ativo) dá 409.

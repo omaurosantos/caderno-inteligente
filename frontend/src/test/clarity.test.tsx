@@ -10,6 +10,7 @@ const ROUTES: Array<[string, string]> = [
   ['/', 'o primeiro SKU da fila'],
   ['/fila', 'a lista de SKUs com ação e quantidade'],
   [`/skus/${SKU_OK}`, 'a ação sugerida do SKU'],
+  ['/skus', 'a lista de SKUs'],
   ['/parceiros', 'a lista de oportunidades'],
   ['/carteira', 'a lista de parceiros'],
   ['/canais', 'os canais diretos'],

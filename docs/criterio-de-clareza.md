@@ -8,8 +8,9 @@ Cada tela tem uma pergunta, uma resposta que aparece primeiro e uma ação princ
 
 | Tela | Pergunta | Resposta que aparece primeiro | Ação principal |
 |---|---|---|---|
-| Início (`/`) | O que olho primeiro? | O primeiro SKU da fila e o porquê, em uma frase | Abrir evidências do SKU |
+| Início (`/`) | O que olho primeiro? | O primeiro SKU da fila e o porquê, em uma frase; o painel (indicadores, gráficos de falta semanal e de produção planejada, ruptura, oportunidades, faturamento) vem abaixo | Abrir evidências do SKU |
 | Fila (`/fila`) | Qual SKU analisar, o que fazer e quanto? | Uma linha por SKU: ação e quantidade à direita, motivo abaixo, margem pela urgência | Abrir o SKU |
+| SKUs (`/skus`) | Onde está o SKU que procuro? | A lista com busca e família | Abrir o SKU |
 | SKU (`/skus/:sku`) | O que fazer com este SKU? | A ação sugerida e a conta da quantidade | Registrar decisão |
 | Oportunidades (`/parceiros`) | Onde repor primeiro? | A lista, da menor cobertura de estoque para a maior | Ver evidências da linha |
 | Parceiros (`/carteira`) | Quanto sei de cada parceiro? | A lista com cobertura de dados e sugestões | Abrir o parceiro |

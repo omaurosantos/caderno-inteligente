@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Alert, Badge, EmptyState, Hint, SectionCard, Tooltip, confidenceTone } from '../components';
 import { displayCurrency, displayPercent, displayPrice, displayUnits, formatMonth } from '../pages/shared';
-import { MonthlyBars } from './MonthlyBars';
+import { CURRENCY, MonthlyBars } from './MonthlyBars';
 import type { MonthBar } from './MonthlyBars';
 import type { ObservedRevenue, RevenueForecast, RevenueItem } from '../types-revenue';
 
@@ -12,7 +12,8 @@ export function RevenueTrend({ observed, months, values, label }: { observed: Ob
     ...months.map((month, index) => ({ month, solid: null, dashed: values[index] ?? null })),
   ];
   const keys = [{ label: 'Observado', dashed: false }, ...(months.length > 0 ? [{ label: 'Estimativa', dashed: true }] : [])];
-  return <MonthlyBars bars={bars} keys={keys} label={label} />;
+  // Valores mês a mês também no texto acessível: o eixo e a dica só existem para quem vê.
+  return <MonthlyBars bars={bars} keys={keys} label={label} format={CURRENCY} describeValues />;
 }
 
 const SIGNED = (ratio: number | null) => ratio === null ? 'Não disponível' : `${ratio >= 0 ? '+' : '−'}${displayPercent(Math.abs(ratio))}`;

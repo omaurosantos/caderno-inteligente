@@ -20,7 +20,7 @@ describe('navegação por teclado', () => {
     const user = userEvent.setup();
     mockApi();
     renderApp('/');
-    await screen.findByRole('heading', { level: 2, name: 'O que olhar primeiro' });
+    await screen.findByRole('heading', { level: 2, name: 'Indicadores' });
     const nav = screen.getByRole('navigation', { name: 'Navegação principal' });
     const parceiros = within(nav).getByRole('link', { name: /Comercial/ });
     parceiros.focus();

@@ -4,6 +4,11 @@ export interface SystemInfo {
   environment: 'development' | 'production';
   demo_mode: boolean;
   write_enabled: boolean;
+  /** Fase 3: de onde a API lê as abas; o cadastro de SKU só existe com 'banco'. */
+  data_source: 'planilha' | 'banco';
+  auth_enabled: boolean;
+  /** false: cadastro de SKU liberado, sem login (padrão atual do backend). */
+  auth_required: boolean;
   text_limits: { note: number; user_name: number; owner: number; case_action: number; analysis_minutes: number };
   notice: string | null;
 }

@@ -40,6 +40,12 @@ const ROUTES: Array<[string, RegExp]> = [
   ['b2b', /^\/api\/b2b2c\/visibility$/],
   ['scenario', /^\/api\/scenarios$/],
   ['system', /^\/api\/system$/],
+  ['login', /^\/api\/auth\/login$/],
+  ['me', /^\/api\/auth\/me$/],
+  ['skuRegistry', /^\/api\/skus\/cadastro$/],
+  ['skuAction', /^\/api\/skus\/[^/]+\/(excluir|reativar)$/],
+  ['sku', /^\/api\/skus\/[^/]+$/],
+  ['skus', /^\/api\/skus$/],
 ];
 
 const DEFAULTS: Record<string, Value> = {
@@ -48,11 +54,17 @@ const DEFAULTS: Record<string, Value> = {
   directChannels: fx.directChannels, directChannel: fx.directChannelDetail, channelFindings: { findings: fx.channelFindings },
   runs: fx.runs, system: fx.system, cases: fx.cases, feedback: fx.feedback, config: fx.config, quality: fx.quality, b2b: fx.b2b,
   skuDetail: (url: URL) => decodeURIComponent(url.pathname.split('/').pop() ?? '') === fx.SKU_SHORT ? fx.skuDetailShort : fx.skuDetailOk,
+  skuRegistry: fx.skuRegistry, me: { user: fx.sessionUser },
+  'POST login': { token: 'token-sintetico', expires_at: 4_102_444_800, user: fx.sessionUser },
+  'POST skus': (_url: URL, init?: RequestInit) => ({ sku: String(JSON.parse(String(init?.body)).sku), version: 2 }),
+  'PUT sku': (url: URL) => ({ sku: decodeURIComponent(url.pathname.split('/').pop() ?? ''), version: 2 }),
+  // Sem .at(): o tsconfig usa lib ES2020, e .at() só passava localmente por tipos de outros pacotes.
+  'POST skuAction': (url: URL) => { const parts = url.pathname.split('/'); return { sku: decodeURIComponent(parts[parts.length - 2] ?? ''), version: 2 }; },
   'POST runs': { id: 3 }, 'PUT case': { status: 'updated' }, 'POST cases': { id: 1 }, 'POST feedback': { status: 'created' },
   'POST scenario': { is_simulation: true, warning: 'Cenário hipotético.', weights: fx.config.weights, thresholds: fx.config.thresholds, ranking: fx.priorities },
 };
 
-export interface ApiCall { method: string; path: string; body: unknown }
+export interface ApiCall { method: string; path: string; body: unknown; headers: Record<string, string> }
 
 /** Routes fetch to synthetic fixtures by endpoint; override a key with a value, Failure, pending() or function. */
 export function mockApi(overrides: Record<string, Value> = {}) {
@@ -60,7 +72,7 @@ export function mockApi(overrides: Record<string, Value> = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://localhost');
     const method = (init?.method ?? 'GET').toUpperCase();
-    calls.push({ method, path: `${url.pathname}${url.search}`, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
+    calls.push({ method, path: `${url.pathname}${url.search}`, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined, headers: { ...(init?.headers as Record<string, string> | undefined) } });
     const name = ROUTES.find(([, pattern]) => pattern.test(url.pathname))?.[0];
     if (!name) return { ok: false, status: 404, json: async () => ({ detail: `Rota não simulada: ${url.pathname}` }) };
     const key = method === 'GET' ? name : `${method} ${name}`;

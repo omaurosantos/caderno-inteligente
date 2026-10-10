@@ -23,3 +23,8 @@ runtime/backups/
 Thumbs.db
 .idea/
 .vscode/
+
+# Skills instaladas localmente pelo `npx skills add` (a cópia usada pelo projeto fica em docs/skills/)
+.agents/
+.claude/skills/
+skills-lock.json

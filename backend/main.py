@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 from threading import Lock
-from time import perf_counter
+from time import monotonic, perf_counter
 
 from datetime import date
 
@@ -34,7 +34,10 @@ from caderno_inteligente.supply_plan import attach_partner_buildup, build_supply
 from caderno_inteligente.partner_insights import build_partner_insights, load_commercial_thresholds  # noqa: E402
 from caderno_inteligente.capacity_plan import build_capacity_plan  # noqa: E402
 from caderno_inteligente.production_plan import build_production_plan  # noqa: E402
+from caderno_inteligente.projected_stock import build_projected_stock  # noqa: E402
 from caderno_inteligente.ingestion import load_workbook  # noqa: E402
+from caderno_inteligente.auth import UserStore  # noqa: E402
+from caderno_inteligente.dataset_store import Database, DatasetStore  # noqa: E402
 from caderno_inteligente.prioritization import load_weights, prioritize  # noqa: E402
 from caderno_inteligente.persistence import build_persistence  # noqa: E402
 from caderno_inteligente.recommendations import build_operational_recommendation  # noqa: E402
@@ -46,6 +49,7 @@ SOURCE = ROOT / "data/source/Base de Dados - Caderno Inteligente.xlsm"
 FEEDBACK_DB = ROOT / "runtime/feedback.db"
 CASES_DB = ROOT / "runtime/cases.db"
 RUNS_DB = ROOT / "runtime/runs.db"
+DATASET_DB = ROOT / "runtime/dataset.db"
 BENCHMARK_DB = ROOT / "runtime/benchmarks.db"
 WEIGHTS_FILE = ROOT / "config/prioritization_weights.json"
 THRESHOLDS_FILE = ROOT / "config/rule_thresholds.json"
@@ -57,9 +61,11 @@ SUPPLY_PLAN_FILE = ROOT / "config/supply_plan.json"
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("caderno_inteligente.api")
 
+from backend.registry import auth_required, auth_secret, create_registry_router  # noqa: E402
 from backend.security import (  # noqa: E402
     MAX_ANALYSIS_MINUTES,
     TEXT_LIMITS,
+    clean_text,
     install_error_handling,
     install_log_redaction,
     load_settings,
@@ -89,6 +95,36 @@ def _persistence():
     )
 
 
+DATA_SOURCES = ("planilha", "banco")
+
+
+def data_source() -> str:
+    """DATA_SOURCE escolhe de onde vêm as abas: planilha (padrão) ou banco (fase 3). Valor desconhecido mantém a planilha."""
+    value = (os.getenv("DATA_SOURCE") or "planilha").strip().lower()
+    return value if value in DATA_SOURCES else "planilha"
+
+
+_database_cache: tuple[tuple, Database] | None = None
+
+
+def _database() -> Database:
+    """Mesmo banco da persistência: PostgreSQL com DATABASE_URL; sem ela, SQLite em runtime/dataset.db."""
+    global _database_cache
+    url = os.getenv("DATABASE_URL")
+    key = (url, None if url else DATASET_DB)
+    if _database_cache is None or _database_cache[0] != key:
+        _database_cache = (key, Database(database_url=url) if url else Database(sqlite_path=DATASET_DB))
+    return _database_cache[1]
+
+
+def dataset_store() -> DatasetStore:
+    return DatasetStore(_database())
+
+
+def user_store() -> UserStore:
+    return UserStore(_database())
+
+
 app = FastAPI(
     title="Caderno Inteligente API",
     description="API local e auditável para apoio à decisão do PCP.",
@@ -98,15 +134,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(SETTINGS.cors_origins),
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
     expose_headers=["X-Request-ID"],
     allow_credentials=False,
 )
 install_error_handling(app, settings)
 logger.info(
-    "api_settings environment=%s demo_mode=%s write_enabled=%s cors_origins=%s persistence=%s",
+    "api_settings environment=%s demo_mode=%s write_enabled=%s cors_origins=%s persistence=%s data_source=%s",
     SETTINGS.environment, SETTINGS.demo_mode, SETTINGS.write_enabled, len(SETTINGS.cors_origins),
-    "postgres" if os.getenv("DATABASE_URL") else "sqlite",
+    "postgres" if os.getenv("DATABASE_URL") else "sqlite", data_source(),
 )
 
 
@@ -115,18 +151,52 @@ def _file_signature(path: Path) -> tuple[int, int]:
     return stat.st_mtime_ns, stat.st_size
 
 
-def _pipeline_signature() -> tuple[tuple[int, int], ...]:
-    return tuple(_file_signature(path) for path in (SOURCE, WEIGHTS_FILE, THRESHOLDS_FILE, ENGINE_CONFIG_FILE, SUPPLY_PLAN_FILE))
+VERSION_CHECK_SECONDS = 5.0
+_version_seen: tuple[float, int] | None = None
+
+
+def _dataset_version() -> int:
+    """Versão dos dados no banco, consultada no máximo a cada VERSION_CHECK_SECONDS; outra instância que alterou um SKU é vista em seguida."""
+    global _version_seen
+    now = monotonic()
+    if _version_seen is not None and now - _version_seen[0] < VERSION_CHECK_SECONDS:
+        return _version_seen[1]
+    version = dataset_store().version()
+    _version_seen = (now, version)
+    return version
+
+
+def invalidate_dataset_version() -> None:
+    """Chamado depois de cada alteração de SKU: a instância que gravou recalcula já na próxima consulta."""
+    global _version_seen
+    _version_seen = None
+
+
+def _source_signature() -> tuple:
+    if data_source() == "banco":
+        return ("banco", _dataset_version())
+    return _file_signature(SOURCE)
+
+
+def _pipeline_signature() -> tuple[tuple, ...]:
+    return (_source_signature(), *(_file_signature(path) for path in (WEIGHTS_FILE, THRESHOLDS_FILE, ENGINE_CONFIG_FILE, SUPPLY_PLAN_FILE)))
+
+
+def load_source() -> dict[str, pd.DataFrame]:
+    """As mesmas abas, da planilha ou do banco; o restante do pipeline não sabe a diferença."""
+    if data_source() == "banco":
+        return dataset_store().load_dataset()
+    return load_workbook(SOURCE)
 
 
 _pipeline_lock = Lock()
-_pipeline_cache: tuple[tuple[tuple[int, int], ...], tuple, dict, dict] | None = None
+_pipeline_cache: tuple[tuple[tuple, ...], tuple, dict, dict] | None = None
 _cache_hits = 0
 
 
 def _build_pipeline():
     started = perf_counter()
-    dataset = normalise_dataset(load_workbook(SOURCE))
+    dataset = normalise_dataset(load_source())
     quality = validate_dataset(dataset)
     thresholds = load_rule_thresholds()
     supply_settings = load_supply_settings(SUPPLY_PLAN_FILE)
@@ -218,6 +288,31 @@ def production_plan() -> dict:
     result = build_production_plan(plans, built[2], built[5])
     _production_cache = (cached_pipeline, result)
     return result
+
+
+_projected_stock_cache: tuple[tuple, dict] | None = None
+
+
+def projected_stock() -> dict:
+    """Falta e segurança projetadas no horizonte, agregadas do plano de suprimento em cache (fase 2)."""
+    global _projected_stock_cache
+    cached_pipeline = _cached()
+    cached = _projected_stock_cache
+    if cached is not None and cached[0] is cached_pipeline:
+        return cached[1]
+    built, plans = cached_pipeline[1], cached_pipeline[2]
+    result = build_projected_stock(plans, built[2], built[5], production_plan())
+    _projected_stock_cache = (cached_pipeline, result)
+    return result
+
+
+def _projected_stock_summary() -> dict | None:
+    """Camada aditiva: uma falha na agregação não pode derrubar os indicadores do Início."""
+    try:
+        return projected_stock()
+    except Exception:  # noqa: BLE001
+        logger.exception("projected_stock_failed")
+        return None
 
 
 def _revenue_item(sku: str) -> dict | None:
@@ -365,6 +460,7 @@ def health():
     return {
         "status": "ok" if database_status == "ok" else "degraded",
         "source_available": SOURCE.exists(),
+        "data_source": data_source(),
         "database": database_status,
         "persistence": persistence.kind,
         "cache": {"loaded": _pipeline_cache is not None, "hits": _cache_hits},
@@ -379,6 +475,9 @@ def system():
         "environment": current.environment,
         "demo_mode": current.demo_mode,
         "write_enabled": current.write_enabled,
+        "data_source": data_source(),
+        "auth_enabled": auth_secret(current.production) is not None,
+        "auth_required": auth_required(),
         "text_limits": {
             "note": TEXT_LIMITS["note"],
             "user_name": TEXT_LIMITS["user_name"],
@@ -411,6 +510,7 @@ def overview():
         "low_confidence": int((ranking.confidence == "baixa").sum()),
         "risk_distribution": issues.code.value_counts().to_dict(),
         "confidence_distribution": ranking.confidence.value_counts().to_dict(),
+        "projected_stock": _projected_stock_summary(),
         **decisions,
     }
 
@@ -723,12 +823,7 @@ def create_snapshot():
     return {"id": run_id}
 
 
-def _clean_text(value: str) -> str:
-    """Trim and reject control characters (line breaks and tabs are allowed in free text)."""
-    value = value.strip()
-    if any((ord(char) < 32 and char not in "\n\t\r") or ord(char) == 127 for char in value):
-        raise ValueError("Texto contém caracteres de controle não permitidos")
-    return value
+_clean_text = clean_text
 
 
 def _require_known_sku(sku: str) -> None:
@@ -944,3 +1039,13 @@ def _comparison_payload():
 
 
 app.include_router(create_run_comparison_router(_persistence))
+
+# Fase 3: login e cadastro de SKU; só grava com DATA_SOURCE=banco.
+app.include_router(create_registry_router(
+    production=lambda: settings().production,
+    data_source=data_source,
+    store=dataset_store,
+    users=user_store,
+    write_access=require_write_access,
+    on_change=invalidate_dataset_version,
+))

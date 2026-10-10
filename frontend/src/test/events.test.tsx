@@ -27,27 +27,6 @@ describe('formatos de evento', () => {
   });
 });
 
-describe('Início: eventos que pedem decisão', () => {
-  it('lista eventos futuros com SKUs afetados e a data de decisão, sem eventos passados', async () => {
-    mockApi();
-    renderApp('/');
-    const table = await screen.findByRole('region', { name: 'Eventos do calendário que pedem decisão' });
-    expect(within(table).getByText('Black Friday')).toBeInTheDocument();
-    expect(within(table).queryByText('Evento passado')).not.toBeInTheDocument();
-    const row = within(table).getByText('Black Friday').closest('tr') as HTMLElement;
-    expect(within(row).getByText('24/10/2026')).toBeInTheDocument();
-    expect(within(row).getByText('50')).toBeInTheDocument();
-  });
-
-  it('falha do calendário não afeta o restante do Início', async () => {
-    mockApi({ events: fail(500, 'Erro interno.') });
-    renderApp('/');
-    expect(await screen.findByRole('heading', { level: 2, name: 'O que olhar primeiro' })).toBeInTheDocument();
-    expect(await screen.findByText('Calendário de eventos indisponível no momento.')).toBeInTheDocument();
-    expect(screen.getByText(/Fila de atenção/)).toBeInTheDocument();
-  });
-});
-
 describe('Fila operacional: selo de evento por SKU', () => {
   it('mostra o evento mais urgente e quantos outros existem, sem tirar a ação operacional', async () => {
     mockApi();

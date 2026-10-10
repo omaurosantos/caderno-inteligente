@@ -4,6 +4,7 @@ import type { EventAnalysis } from './types-events';
 import type { ForecastLab } from './types-forecast-lab';
 import type { ModelBenchmark } from './types-model-benchmark';
 import type { ProductionPlan } from './types-production';
+import type { LoginResult, SessionUser, SkuFields, SkuRegistry, SkuSaved } from './types-registry';
 import type { RevenueForecast } from './types-revenue';
 import type { RunComparison } from './types-runs';
 import type { ValidationSummary } from './types-validation';
@@ -33,7 +34,11 @@ export class ApiError extends Error {
   }
 }
 
-const FIELD_NAMES: Record<string, string> = { note: 'observação', user_name: 'usuário', owner: 'responsável', due_date: 'prazo', analysis_minutes: 'tempo de análise', sku: 'SKU', action: 'ação' };
+const FIELD_NAMES: Record<string, string> = {
+  note: 'observação', user_name: 'usuário', owner: 'responsável', due_date: 'prazo', analysis_minutes: 'tempo de análise', sku: 'SKU', action: 'ação',
+  produto: 'produto', familia: 'família', curva_abc: 'curva ABC', lead_time_dias: 'prazo de produção', lote_minimo: 'lote mínimo',
+  estoque_atual: 'estoque atual', estoque_seguranca_dias: 'estoque de segurança', venda_media_dia: 'venda média por dia', email: 'e-mail', password: 'senha',
+};
 
 function validationMessage(item: { msg?: string; loc?: unknown[] }) {
   const field = item.loc?.[item.loc.length - 1];
@@ -41,6 +46,9 @@ function validationMessage(item: { msg?: string; loc?: unknown[] }) {
   const message = (item.msg ?? 'valor inválido').replace(/^Value error, /, '');
   return name ? `${name} — ${message}` : message;
 }
+
+/** Sem token (cadastro liberado, AUTH_REQUIRED=false), nenhum cabeçalho de login é enviado. */
+const bearer = (token: string): Record<string, string> => token ? { Authorization: `Bearer ${token}` } : {};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
@@ -122,6 +130,16 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  login: (email: string, password: string) =>
+    request<LoginResult>('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }),
+  me: (token: string, signal?: AbortSignal) => request<{ user: SessionUser }>('/auth/me', { headers: bearer(token), signal }),
+  skuRegistry: (token: string, signal?: AbortSignal) => request<SkuRegistry>('/skus/cadastro', { headers: bearer(token), signal }),
+  createSku: (token: string, body: SkuFields & { sku: string }) =>
+    request<SkuSaved>('/skus', { method: 'POST', headers: { ...bearer(token), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  updateSku: (token: string, sku: string, body: SkuFields) =>
+    request<SkuSaved>(`/skus/${encodeURIComponent(sku)}`, { method: 'PUT', headers: { ...bearer(token), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  deleteSku: (token: string, sku: string) => request<SkuSaved>(`/skus/${encodeURIComponent(sku)}/excluir`, { method: 'POST', headers: bearer(token) }),
+  reactivateSku: (token: string, sku: string) => request<SkuSaved>(`/skus/${encodeURIComponent(sku)}/reativar`, { method: 'POST', headers: bearer(token) }),
   scenario: (body: Record<string, unknown>) =>
     request<ScenarioResult>('/scenarios', {
       method: 'POST',

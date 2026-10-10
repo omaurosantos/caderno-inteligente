@@ -7,7 +7,7 @@ describe('robustez', () => {
   it('resposta malformada fica contida na rota e o menu continua utilizável', async () => {
     const user = userEvent.setup();
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockApi({ priorities: null as unknown as never });
+    mockApi({ overview: null as unknown as never });
     renderApp('/');
     expect(await screen.findByRole('heading', { name: 'Esta página não pôde ser exibida' })).toBeInTheDocument();
     expect(screen.getByText(/Os dados de origem não foram alterados/)).toBeInTheDocument();

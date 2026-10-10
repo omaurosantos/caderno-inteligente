@@ -152,6 +152,30 @@ Origem: análise crítica de aderência ao PDF do desafio, que encontrou recomen
   - manutenção da precedência do plano (falta inevitável antes de produzir e de rever OP; ordem planejada antes de monitorar excesso), com VC-03, VC-08 e VC-22 revistos.
 - **Fora do escopo:** tendência ano contra ano, alocação de produto escasso entre parceiros e regiões, reconciliação Sell_In × Vendas_24m, recalibração das faixas P10–P90.
 
+## 2026-10-08 — Fase 1 da proposta de melhorias: telas
+
+Origem: [proposta-melhorias.md](proposta-melhorias.md), fase 1. Só frontend; nenhum endpoint ou cálculo novo.
+
+- **Início como painel:** a resposta "o que olho primeiro" (primeiro SKU da fila) continua no topo, respeitando o critério de clareza. Abaixo vêm os indicadores de ruptura, os 5 primeiros SKUs com risco de ruptura (link para `/fila?sinal=ruptura`), as 5 oportunidades de reposição com menor cobertura (link para `/parceiros`) e o gráfico de faturamento observado × estimado (`RevenueTrend`, sem alterações).
+- **Fila de 5 substituída pela lista de ruptura:** a lista de ruptura segue a ordem da fila de atenção, e a fila completa continua a um clique. Manter as duas repetiria quase os mesmos SKUs.
+- **Blocos independentes:** oportunidades e faturamento têm carga própria. Se um falha, mostra o motivo e "Tentar novamente"; o restante do Início não é afetado.
+- **Orçamento de volume:** o limite de blocos de `/` sobe de 5 para 6 (o painel acrescenta oportunidades e faturamento e retira a fila de 5). Nenhum outro limite muda. `/skus` ganha orçamento próprio.
+- **Fila:** novo filtro `sinal=ruptura` (`RUP_LEAD_TIME` ou `RUP_SAFETY_STOCK`, os mesmos códigos de `rupture_sku_count`).
+- **Financeiro:** filtros acima do cartão de resumo, porque a família também o restringe. A lista de SKUs passa a 10 por página, com Anterior/Próxima, no lugar do "Ver mais".
+- **SKUs no menu:** nova entrada com a lista completa (busca, família, 10 por página), a partir de `/api/forecasts`. O detalhe `/skus/:sku` passa a marcar SKUs no menu, e não mais Planejamento.
+
+## 2026-10-08 — Fase 3 da proposta de melhorias: banco, login e cadastro de SKU
+
+Origem: [proposta-melhorias.md](proposta-melhorias.md), fase 3. Detalhes em [fase-3-banco-e-cadastro.md](fase-3-banco-e-cadastro.md).
+
+- **Fonte configurável, planilha como padrão:** `DATA_SOURCE=banco` troca só a origem das abas. O banco devolve os mesmos DataFrames da planilha, e os testes comparam aba por aba e o ranking. Os testes existentes continuam na planilha.
+- **Uma tabela por aba, registro em jsonb:** preserva todas as colunas (inclusive as que o pipeline não usa) e os tipos sem um esquema rígido por coluna, que quebraria a cada coluna nova da planilha. A coluna `sku` fica fora do jsonb para filtrar e indexar.
+- **Login próprio (opção 1 da seção 3.2):** sem serviço externo. Senha com scrypt e token HS256, só com a biblioteca padrão (sem dependência nova). Usuários criados por script; não há cadastro público. Decisões e casos continuam sem login.
+- **Exclusão lógica:** `active = false` tira o SKU de todas as abas no cálculo e preserva casos, decisões e execuções. É feita por `POST /api/skus/{sku}/excluir`, o que mantém o CORS sem DELETE (há um teste de segurança que exige isso).
+- **Mesma validação de `schemas.py`:** cada gravação roda `validate_dataset` sobre a prévia da base inteira e recusa erros novos. A família precisa existir, porque capacidade e linhas dependem dela.
+- **Versão dos dados:** incrementada na mesma transação de cada gravação. As instâncias consultam a versão a cada 5 s, e a instância que gravou recalcula na hora.
+- **SQLite local para o cadastro:** sem `DATABASE_URL`, o cadastro usa `runtime/dataset.db`, o que permite testar o fluxo inteiro sem PostgreSQL.
+- **Login desligado temporariamente (pedido do usuário):** `AUTH_REQUIRED=false` é o padrão, e o cadastro de SKU fica liberado. O login não foi removido; volta com `AUTH_REQUIRED=true`.
 
 ## 2026-10-09 — Benchmark de modelos e aba Modelo de previsão
 

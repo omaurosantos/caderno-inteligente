@@ -1,7 +1,7 @@
 # Arquitetura
 
 ```text
-XLSM (somente leitura, empacotado no deploy)
+XLSM (somente leitura, empacotado no deploy) ── ou ── tabelas por aba no banco (fase 3, DATA_SOURCE=banco)
         │
         ▼
 Núcleo Python determinístico — src/caderno_inteligente/
@@ -34,14 +34,16 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 | `model_card.py` | Cartão do modelo oficial: o que prevê, premissas, erro e limitações |
 | `model_benchmark.py`, `benchmark_store.py` | Benchmark de modelos (statsforecast, scikit-learn, LightGBM, Prophet) contra o oficial e histórico das rodadas em SQLite local; fora do pipeline oficial |
 | `persistence.py`, `postgres_persistence.py`, `feedback.py`, `cases.py` | Mesmo contrato em SQLite e PostgreSQL |
+| `dataset_store.py`, `auth.py` | Fase 3: abas no banco (mesmos DataFrames da planilha), cadastro de SKU com exclusão lógica, versão dos dados e login ([fase 3](fase-3-banco-e-cadastro.md)) |
 
 ## Backend (`backend/`)
 
-- `main.py` monta o pipeline e o mantém em **cache em memória**. O cache é protegido contra reconstruções concorrentes e invalidado quando mudam a data ou o tamanho do XLSM, dos pesos ou dos limiares.
+- `main.py` monta o pipeline e o mantém em **cache em memória**. O cache é protegido contra reconstruções concorrentes e invalidado quando mudam a data ou o tamanho do XLSM, dos pesos ou dos limiares. Com `DATA_SOURCE=banco`, o XLSM dá lugar à versão dos dados no banco.
 - Routers aditivos:
   - `partners.py`: visão comercial;
   - `validation.py`: Central de validação;
   - `run_comparisons.py`: comparação de execuções;
+  - `registry.py`: login e cadastro de SKU (fase 3);
   - `model_benchmark.py`: cartão do modelo e rodadas do benchmark;
   - `partner_stock_projection.py`: projeção de estoque no parceiro (sem tela).
 - `security.py` reúne:
@@ -78,14 +80,15 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 
 ### Mapa de rotas
 
-O menu agrupa as rotas em 7 entradas: Início; Planejamento (`/fila`, `/cenarios` e o detalhe `/skus/:sku`); Financeiro (`/faturamento`); Comercial (`/parceiros`, `/carteira`, `/canais`, `/parceiros/:codigo`, `/canais/:canal`); Acompanhamento (`/casos`, `/decisoes`); Confiança (`/validacao`, `/modelo`); Bastidores (`/auditoria`, `/execucoes`, `/qualidade`). Os endereços antigos `?aba=parceiros` e `?aba=diretos` redirecionam para `/carteira` e `/canais`. Todos os estilos estão em `frontend/src/styles.css` (tokens no topo).
+O menu agrupa as rotas em 8 entradas: Início; Planejamento (`/fila`, `/capacidade`, `/cenarios`); SKUs (`/skus` e o detalhe `/skus/:sku`); Financeiro (`/faturamento`); Comercial (`/parceiros`, `/carteira`, `/canais`, `/parceiros/:codigo`, `/canais/:canal`); Acompanhamento (`/casos`, `/decisoes`); Confiança (`/validacao`, `/modelo`); Bastidores (`/auditoria`, `/execucoes`, `/qualidade`). Os endereços antigos `?aba=parceiros` e `?aba=diretos` redirecionam para `/carteira` e `/canais`. Todos os estilos estão em `frontend/src/styles.css` (tokens no topo).
 
 | URL | Página | Dados consultados |
 |---|---|---|
 | `/guia` | Guia de uso | Nenhum (funciona com a API fora do ar) |
-| `/` | Início | `overview`, `priorities`, `data-quality`, `config` |
-| `/fila` | Fila operacional — filtros `busca`, `familia`, `acao`, `rotulo`, `confianca`, `ordem`, `todos` na URL; junta posição e ação pelo SKU no cliente; gráfico de produção planejada por mês, que segue o filtro de família | `priorities`, `forecasts`, `config`, `events`, `production-plan` |
-| `/faturamento` | Faturamento previsto — filtros `busca`, `familia` | `revenue-forecast` |
+| `/` | Início — o primeiro SKU da fila no topo e, abaixo, o painel: indicadores de ruptura, 5 SKUs com risco de ruptura, 5 oportunidades de reposição e o gráfico de faturamento. Oportunidades e faturamento carregam e falham cada um por si | `overview`, `priorities`, `config`, `events`, `commercial-recommendations?action=avaliar_reposicao`, `revenue-forecast` |
+| `/fila` | Fila operacional — filtros `busca`, `familia`, `acao`, `rotulo`, `confianca`, `sinal` (`ruptura`), `ordem`, `todos` na URL; junta posição e ação pelo SKU no cliente; gráfico de produção planejada por mês, que segue o filtro de família | `priorities`, `forecasts`, `config`, `events`, `production-plan` |
+| `/faturamento` | Faturamento previsto — filtros `busca`, `familia` no topo (a família também restringe o resumo); SKUs paginados de 10 em 10 | `revenue-forecast` |
+| `/skus` | Lista de SKUs — filtros `busca`, `familia`; paginada de 10 em 10; cada linha abre `/skus/:sku` | `forecasts` |
 | `/prioridades`, `/previsoes` | Redirecionam para `/fila` (mesmos parâmetros) | Nenhum |
 | `/skus/:sku` | Detalhe do SKU (compartilhável), abas em `?tab=`; o contexto comercial só carrega na aba Parceiros | `priorities/{sku}`, `commercial-recommendations?sku=` (aba Parceiros) |
 | `/casos` | Casos — edição por linha (`PUT cases/{id}`), filtros `status`, `responsavel` | `cases`, `priorities`, `config` |

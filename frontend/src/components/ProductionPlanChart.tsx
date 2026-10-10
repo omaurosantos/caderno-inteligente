@@ -9,7 +9,7 @@ const KEYS = [{ label: 'Liberar agora', dashed: false }, { label: 'Liberar depoi
  * Produção planejada por mês de liberação, no total ou na família filtrada da fila.
  * Camada aditiva: carrega à parte e, se falhar, a fila continua. Plano sugerido, não ordem liberada; a capacidade fica no botão da página.
  */
-export function ProductionPlanChart({ data, error, loading, refresh, family = '' }: { data: ProductionPlan | undefined; error: string; loading: boolean; refresh: () => Promise<void>; family?: string }) {
+export function ProductionPlanChart({ data, error, loading, refresh, family = '', totals = true }: { data: ProductionPlan | undefined; error: string; loading: boolean; refresh: () => Promise<void>; family?: string; /** false no Início: os totais já estão nos indicadores logo acima. */ totals?: boolean }) {
   if (!data && loading) return <SectionCard title="Produção planejada por mês" subtitle="Calculando…"><div className="drawer-loading"><span /><span /></div></SectionCard>;
   if (!data) return <Alert tone="warning" title="Produção planejada indisponível" action={<button className="secondary-button" onClick={() => void refresh()}>Tentar novamente</button>}>{error || 'Não foi possível carregar o plano.'} A fila, as ações e as quantidades seguem válidas.</Alert>;
 
@@ -27,10 +27,10 @@ export function ProductionPlanChart({ data, error, loading, refresh, family = ''
   const excluded = data.excluded_skus.length;
   return <SectionCard className="production-plan-card" title="Produção planejada por mês" action={tag}>
     <MonthlyBars bars={bars} keys={KEYS} label={`Unidades a liberar para produção por mês, ${scope}. ${byMonth}. Plano sugerido, não ordem liberada.`} />
-    <p className="fact-line">
+    {totals ? <p className="fact-line">
       <strong>{displayUnits(block.urgent_total)}</strong> para liberar agora · {displayUnits(block.horizon_total)} no horizonte
       <Tooltip label="Unidades por mês de liberação">{byMonth}.{omitted && ` ${omitted} fora do gráfico: o prazo de produção passa do fim da previsão.`}{excluded > 0 && ` ${excluded} SKU${excluded > 1 ? 's' : ''} sem previsão fora da soma.`}</Tooltip>
       {omitted && <> · {omitted} fora do gráfico</>}
-    </p>
+    </p> : omitted && <p className="fact-line">{omitted} fora do gráfico: o prazo de produção passa do fim da previsão.</p>}
   </SectionCard>;
 }
