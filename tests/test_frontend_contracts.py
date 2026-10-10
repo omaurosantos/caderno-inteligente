@@ -77,7 +77,7 @@ def responses(tmp_path_factory):
         "runs": "/api/runs", "b2b": "/api/b2b2c/visibility", "forecasts": "/api/forecasts", "revenueForecast": "/api/revenue-forecast", "capacityPlan": "/api/capacity-plan", "productionPlan": "/api/production-plan", "events": "/api/events",
         "directChannels": "/api/direct-channels", "directChannel": "/api/direct-channels/E-commerce", "channelFindings": "/api/data-quality/channels", "skuDetail": f"/api/priorities/{SKU}",
         "partners": "/api/partners", "partnerDetail": f"/api/partners/{PARTNER}", "partnerSkus": f"/api/partners/{PARTNER}/skus?limit=50",
-        "commercial": "/api/commercial-recommendations?limit=50", "validation": "/api/validation/summary", "forecastLab": "/api/forecast-lab",
+        "commercial": "/api/commercial-recommendations?limit=50", "validation": "/api/validation/summary", "forecastLab": "/api/forecast-lab", "modelBenchmark": "/api/model-benchmark",
         "runComparison": f"/api/run-comparisons?base={legacy}&target={current}", "system": "/api/system",
     }
     result = {}

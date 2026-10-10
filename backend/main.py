@@ -46,6 +46,7 @@ SOURCE = ROOT / "data/source/Base de Dados - Caderno Inteligente.xlsm"
 FEEDBACK_DB = ROOT / "runtime/feedback.db"
 CASES_DB = ROOT / "runtime/cases.db"
 RUNS_DB = ROOT / "runtime/runs.db"
+BENCHMARK_DB = ROOT / "runtime/benchmarks.db"
 WEIGHTS_FILE = ROOT / "config/prioritization_weights.json"
 THRESHOLDS_FILE = ROOT / "config/rule_thresholds.json"
 EVENT_FACTORS_FILE = ROOT / "config/event_factors.json"
@@ -902,6 +903,26 @@ app.include_router(create_forecast_lab_router(
     pipeline=pipeline,
     source=SOURCE,
     engine_config_file=ENGINE_CONFIG_FILE,
+    describe_error=_describe_error,
+))
+
+# Additive model card and benchmark history: evidence only; the official forecast is untouched.
+from backend.model_benchmark import create_model_benchmark_router  # noqa: E402
+
+app.include_router(create_model_benchmark_router(
+    pipeline=pipeline,
+    source=SOURCE,
+    engine_config_file=ENGINE_CONFIG_FILE,
+    benchmark_db=BENCHMARK_DB,
+    describe_error=_describe_error,
+))
+
+# Additive partner stock projection: backend only until the group validates it; nothing official reads it.
+from backend.partner_stock_projection import create_partner_stock_projection_router  # noqa: E402
+
+app.include_router(create_partner_stock_projection_router(
+    dataset_loader=lambda: pipeline()[0],
+    settings_file=ROOT / "config/partner_projection.json",
     describe_error=_describe_error,
 ))
 

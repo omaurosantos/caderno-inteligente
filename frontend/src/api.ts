@@ -2,6 +2,7 @@ import type { CommercialPage, CommercialRow, PartnerDetail, PartnerSummary } fro
 import type { ChannelFinding, DirectChannelDetail, DirectChannelsOverview } from './types-channels';
 import type { EventAnalysis } from './types-events';
 import type { ForecastLab } from './types-forecast-lab';
+import type { ModelBenchmark } from './types-model-benchmark';
 import type { ProductionPlan } from './types-production';
 import type { RevenueForecast } from './types-revenue';
 import type { RunComparison } from './types-runs';
@@ -100,6 +101,7 @@ export const api = {
   system: (signal?: AbortSignal) => request<SystemInfo>('/system', { signal }),
   validationSummary: (signal?: AbortSignal) => request<ValidationSummary>('/validation/summary', { signal }),
   forecastLab: (signal?: AbortSignal) => request<ForecastLab>('/forecast-lab', { signal }),
+  modelBenchmark: (signal?: AbortSignal) => request<ModelBenchmark>('/model-benchmark', { signal }),
   runComparison: (base: number, target: number, signal?: AbortSignal) => request<RunComparison>(`/run-comparisons?${new URLSearchParams({ base: String(base), target: String(target) })}`, { signal }),
   createRun: () => request<{ id: number }>('/runs', { method: 'POST' }),
   createCase: (body: Record<string, unknown>) =>

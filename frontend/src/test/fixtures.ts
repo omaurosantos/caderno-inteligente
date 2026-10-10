@@ -5,6 +5,7 @@ import type { ChallengeAction } from '../types-actions';
 import type { ChannelFinding, ChannelSkuRow, ChannelSummary, DirectChannelDetail, DirectChannelsOverview } from '../types-channels';
 import type { EventAlert, EventAnalysis, EventItem, EventScenario } from '../types-events';
 import type { ForecastLab, SensitivityCell } from '../types-forecast-lab';
+import type { BenchmarkResult, ModelBenchmark } from '../types-model-benchmark';
 import type { ProductionPlan } from '../types-production';
 import type { RevenueForecast, RevenueItem } from '../types-revenue';
 import type { RunComparison } from '../types-runs';
@@ -407,4 +408,45 @@ export const productionPlan: ProductionPlan = {
   field_nature: { urgent: { nature: 'estimado', origin: 'ordens planejadas com liberação dentro da janela de decisão' }, later: { nature: 'estimado', origin: 'ordens planejadas com liberação depois da janela de decisão' } },
   limitations: ['Plano sugerido, não ordem liberada: cada ordem exige revisão humana antes de virar OP.'],
   requires_human_review: true,
+};
+
+const benchmarkResult = (model: string, label: string, wape: number | null, extra: Partial<BenchmarkResult> = {}): BenchmarkResult => ({
+  model, label, library: 'teste', library_version: '1.0', status: 'ok', error_message: null,
+  wape, peak_wape: wape === null ? null : wape + 0.01, normal_wape: wape, bias: wape === null ? null : -0.012,
+  evaluated_points: 30, fallback_points: 0, duration_seconds: 1.5, is_official: false, beats_official: wape === null ? null : wape < 0.08, ...extra,
+});
+
+export const modelBenchmark: ModelBenchmark = {
+  official: {
+    engine: 'v2',
+    engine_label: 'Motor sintético: mês do ano anterior ajustado pelo nível',
+    target: { what: 'Unidades faturadas por SKU e mês', source: 'Vendas sintéticas somadas entre canais', granularity: 'SKU × mês' },
+    horizon_months: 6,
+    models: [
+      { model: 'seasonal_level', label: 'Mês do ano anterior ajustado pelo nível', description: 'Mesmo mês do ano anterior, ajustado pelo nível.', min_history_months: 15, skus: 2 },
+      { model: 'moving_average_3', label: 'Média móvel de 3 meses', description: 'Média dos últimos 3 meses.', min_history_months: 3, skus: 0 },
+    ],
+    data: { skus: 3, skus_with_forecast: 2, history_months_max: 24, history_months_min: 4 },
+    assumptions: ['Premissa sintética do nível.', 'Previsão nunca negativa.'],
+    evaluation: { origins: ['2025-11', '2025-12'], horizon_months: 3, peak_months: [11, 1], wape: 0.08, peak_wape: 0.079, normal_wape: 0.081, bias: 0.001, evaluated_points: 12, metric: 'WAPE agrupado' },
+    confidence: { rule: 'Regra sintética de confiança.', skus: { alta: 2, 'média': 0, baixa: 1 } },
+    limitations: ['Limitação sintética.'],
+    nature: 'calculado',
+  },
+  benchmark: {
+    status: 'ok', stale: false, note: null,
+    run: {
+      id: 2, created_at: '2026-10-09T12:00:00+00:00', source_hash: 'abc', official_model: 'seasonal_level', note: null,
+      results: [
+        benchmarkResult('official', 'Motor oficial', 0.08, { is_official: true, beats_official: null }),
+        benchmarkResult('auto_arima', 'AutoARIMA sintético', 0.133, { fallback_points: 3 }),
+        benchmarkResult('prophet', 'Prophet sintético', 0.364),
+        benchmarkResult('lightgbm', 'LightGBM sintético', null, { status: 'unavailable', error_message: 'Biblioteca ausente: lightgbm' }),
+      ],
+    },
+    history: [
+      { id: 2, created_at: '2026-10-09T12:00:00+00:00', models: 4, best_model: 'official', best_wape: 0.08 },
+      { id: 1, created_at: '2026-10-08T12:00:00+00:00', models: 2, best_model: 'official', best_wape: 0.08 },
+    ],
+  },
 };
