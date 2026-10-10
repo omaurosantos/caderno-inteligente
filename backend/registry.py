@@ -45,7 +45,7 @@ def auth_secret(production: bool) -> str | None:
     if len(value) >= MIN_SECRET_LENGTH:
         return value
     if value:
-        logger.warning("auth_secret_too_short min_length=%s login_disabled=%s", MIN_SECRET_LENGTH, production)
+        logger.warning("auth_secret_too_short")
     return None if production else _dev_secret
 
 
