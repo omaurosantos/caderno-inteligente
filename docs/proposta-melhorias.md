@@ -78,7 +78,7 @@ A regra simplificada que tínhamos discutido não é mais necessária. A fase pa
 
 Antes de qualquer endpoint de cadastro, adicionar autenticação. Hoje, com `WRITE_ENABLED=true`, qualquer pessoa com o link consegue gravar.
 
-Como o ambiente de teste usa PostgreSQL no Railway (sem Supabase), o Supabase Auth deixa de ser o caminho natural. Opções a decidir no início da fase:
+Opções a decidir no início da fase (a escolhida foi a autenticação própria, ver [fase-3-banco-e-cadastro.md](fase-3-banco-e-cadastro.md)):
 
 - **Autenticação própria no FastAPI:** tabela de usuários no mesmo banco, senha com hash e token JWT. Sem dependência externa.
 - **Provedor externo** (por exemplo, Auth0 ou Clerk): menos código, mas um serviço a mais para configurar.
@@ -92,10 +92,8 @@ Como o ambiente de teste usa PostgreSQL no Railway (sem Supabase), o Supabase Au
 
 ### 3.4 Hospedagem
 
-- **Banco no Railway:** o PostgreSQL do ambiente de teste fica no Railway. O backend não muda: `postgres_persistence.py` usa `psycopg` com PostgreSQL comum, e as migrações de `supabase/migrations/` são SQL puro. A Vercel conecta pela URL pública (`DATABASE_PUBLIC_URL`, host `*.proxy.rlwy.net`), não pela interna (`*.railway.internal`).
-- **Conexões:** o Railway não tem um pooler de transações como o do Supabase. A API abre uma conexão por operação, o que basta para o ambiente de teste; se o volume crescer, avaliamos um pooler (PgBouncer) no próprio Railway.
+- **Banco único no Supabase:** as tabelas da base ficam no mesmo Supabase que já guarda execuções, casos e decisões, pelo Transaction Pooler (porta 6543). Não há um segundo banco.
 - **Vercel continua atendendo a API:** segue como função, agora lendo do banco. O tempo de cálculo é o mesmo de hoje, dentro do limite de 60 s.
-- **API no Railway (opcional):** só vale a pena se o recálculo ficar pesado ou se quisermos um servidor contínuo em vez de função. Com a API e o banco no mesmo projeto, a conexão passa a usar a rede interna.
 
 ---
 
@@ -124,5 +122,5 @@ Como o ambiente de teste usa PostgreSQL no Railway (sem Supabase), o Supabase Au
 - [ ] Fase 3: migrar a planilha para o banco
 - [ ] Fase 3: login antes do cadastro de SKU (autenticação própria ou provedor externo)
 - [ ] Fase 3: exclusão lógica de SKU
-- [ ] Fase 3: banco no Railway, API mantida na Vercel (API no Railway só se necessário)
+- [ ] Fase 3: tabelas da base no mesmo Supabase de hoje, API mantida na Vercel
 - [ ] Fase 4: refatoração visual por último, respeitando os testes de estilo

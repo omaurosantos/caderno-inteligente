@@ -71,22 +71,23 @@ $env:DATA_SOURCE = "banco"
 .\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### Ambiente de teste (PostgreSQL no Railway, API na Vercel)
+### Publicado (Supabase, API na Vercel)
 
-1. Crie o PostgreSQL no Railway. Use a URL pública (`DATABASE_PUBLIC_URL`, host `*.proxy.rlwy.net`), não a interna `*.railway.internal`.
-2. Rode as migrações 001 a 004 de `supabase/migrations/`, nessa ordem (SQL puro). Os comandos `enable row level security` são inofensivos fora do Supabase.
-3. Importe a planilha e crie os usuários a partir da sua máquina, com `DATABASE_URL` só no ambiente do terminal:
+O banco é o mesmo Supabase que já guarda execuções, casos e decisões. Não há um segundo banco.
+
+1. No SQL Editor do Supabase, rode `supabase/migrations/004_dataset_and_auth.sql` (as 001 a 003 já estão aplicadas). A migração é aditiva e pode ser executada mais de uma vez.
+2. Importe a planilha e crie os usuários a partir da sua máquina, com a `DATABASE_URL` do Transaction Pooler (porta 6543) só no ambiente do terminal:
 
    ```powershell
-   $env:DATABASE_URL = "<URL pública do Railway>"
+   $env:DATABASE_URL = "<connection string do Transaction Pooler do Supabase>"
    .\.venv\Scripts\python.exe scripts\import_workbook.py --postgres
    .\.venv\Scripts\python.exe scripts\create_user.py --email pcp@exemplo.com --name "PCP" --postgres
    ```
 
-4. No projeto backend da Vercel, configure `DATABASE_URL` (URL pública do Railway), `DATA_SOURCE=banco` e `AUTH_SECRET` (por exemplo, `python -c "import secrets; print(secrets.token_urlsafe(48))"`), além das variáveis que já existiam.
-5. Confira `GET /api/system`: deve retornar `data_source: "banco"` e `auth_enabled: true`. Depois, entre pela lista de SKUs.
+3. No projeto backend da Vercel, mantenha a `DATABASE_URL` que já existe e acrescente `DATA_SOURCE=banco` e `AUTH_SECRET` (por exemplo, `python -c "import secrets; print(secrets.token_urlsafe(48))"`).
+4. Confira `GET /api/system`: deve retornar `data_source: "banco"` e `auth_enabled: true`. Depois, entre pela lista de SKUs.
 
-O Railway não tem um pooler de transações como o do Supabase. A API abre uma conexão por operação, o que basta para o ambiente de teste.
+Sem `DATA_SOURCE=banco`, a API continua lendo a planilha empacotada, mesmo com as tabelas da 004 criadas.
 
 ## Limitações conhecidas
 

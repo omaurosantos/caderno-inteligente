@@ -49,7 +49,7 @@ GET https://DOMINIO-DO-BACKEND.vercel.app/api/health
 
 O retorno deve indicar `status: ok`, `database: ok` e `persistence: postgres`.
 
-Para ler a base do banco e habilitar o login e o cadastro de SKU (fase 3), rode também a migração `004_dataset_and_auth.sql`, importe a planilha e configure `DATA_SOURCE=banco` e `AUTH_SECRET`. O passo a passo, inclusive com PostgreSQL no Railway, está em [fase-3-banco-e-cadastro.md](fase-3-banco-e-cadastro.md).
+Para ler a base do banco e habilitar o login e o cadastro de SKU (fase 3), rode também a migração `004_dataset_and_auth.sql`, importe a planilha e configure `DATA_SOURCE=banco` e `AUTH_SECRET`. O passo a passo está em [fase-3-banco-e-cadastro.md](fase-3-banco-e-cadastro.md).
 
 ## 3. Frontend na Vercel
 

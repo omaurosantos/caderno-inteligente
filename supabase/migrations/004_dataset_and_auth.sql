@@ -1,5 +1,5 @@
 -- Fase 3: planilha no banco (uma tabela por aba), cadastro de SKU com exclusão lógica, versão dos dados e login.
--- Aditiva: nada muda enquanto DATA_SOURCE=planilha. SQL puro (Supabase ou PostgreSQL comum, como o do Railway).
+-- Aditiva: nada muda enquanto DATA_SOURCE=planilha. Rodar no mesmo Supabase das migrações 001 a 003.
 -- Cada linha guarda o registro da aba em `data` (jsonb, chaves = colunas da planilha); `dataset_sheets.columns`
 -- guarda a ordem e o tipo das colunas, para a API remontar os mesmos DataFrames da planilha.
 
