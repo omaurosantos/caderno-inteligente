@@ -30,6 +30,9 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 | `partner_insights.py` | Pares parceiro–SKU reais, sinais e ações comerciais ([regras comerciais](commercial-rules.md)) |
 | `validation_center.py` | Linha de base, baseline de previsão, casos congelados e comportamento seguro ([Semana 4](semana-4-validacao-v2.md)) |
 | `run_comparison.py`, `runs.py` | Snapshot versionado e comparação entre execuções |
+| `partner_stock_projection.py` | Projeção de estoque no parceiro com erros de sell-in e sell-out; só API, sem tela |
+| `model_card.py` | Cartão do modelo oficial: o que prevê, premissas, erro e limitações |
+| `model_benchmark.py`, `benchmark_store.py` | Benchmark de modelos (statsforecast, scikit-learn, LightGBM, Prophet) contra o oficial e histórico das rodadas em SQLite local; fora do pipeline oficial |
 | `persistence.py`, `postgres_persistence.py`, `feedback.py`, `cases.py` | Mesmo contrato em SQLite e PostgreSQL |
 | `dataset_store.py`, `auth.py` | Fase 3: abas no banco (mesmos DataFrames da planilha), cadastro de SKU com exclusão lógica, versão dos dados e login ([fase 3](fase-3-banco-e-cadastro.md)) |
 
@@ -40,7 +43,9 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
   - `partners.py`: visão comercial;
   - `validation.py`: Central de validação;
   - `run_comparisons.py`: comparação de execuções;
-  - `registry.py`: login e cadastro de SKU (fase 3).
+  - `registry.py`: login e cadastro de SKU (fase 3);
+  - `model_benchmark.py`: cartão do modelo e rodadas do benchmark;
+  - `partner_stock_projection.py`: projeção de estoque no parceiro (sem tela).
 - `security.py` reúne:
   - ambiente (`APP_ENV`);
   - modo demonstração (`DEMO_MODE`);
@@ -75,7 +80,7 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 
 ### Mapa de rotas
 
-O menu agrupa as rotas em 8 entradas: Início; Planejamento (`/fila`, `/capacidade`, `/cenarios`); SKUs (`/skus` e o detalhe `/skus/:sku`); Financeiro (`/faturamento`); Comercial (`/parceiros`, `/carteira`, `/canais`, `/parceiros/:codigo`, `/canais/:canal`); Acompanhamento (`/casos`, `/decisoes`); Confiança (`/validacao`); Bastidores (`/auditoria`, `/execucoes`, `/qualidade`). Os endereços antigos `?aba=parceiros` e `?aba=diretos` redirecionam para `/carteira` e `/canais`. Todos os estilos estão em `frontend/src/styles.css` (tokens no topo).
+O menu agrupa as rotas em 8 entradas: Início; Planejamento (`/fila`, `/capacidade`, `/cenarios`); SKUs (`/skus` e o detalhe `/skus/:sku`); Financeiro (`/faturamento`); Comercial (`/parceiros`, `/carteira`, `/canais`, `/parceiros/:codigo`, `/canais/:canal`); Acompanhamento (`/casos`, `/decisoes`); Confiança (`/validacao`, `/modelo`); Bastidores (`/auditoria`, `/execucoes`, `/qualidade`). Os endereços antigos `?aba=parceiros` e `?aba=diretos` redirecionam para `/carteira` e `/canais`. Todos os estilos estão em `frontend/src/styles.css` (tokens no topo).
 
 | URL | Página | Dados consultados |
 |---|---|---|
@@ -96,6 +101,7 @@ O menu agrupa as rotas em 8 entradas: Início; Planejamento (`/fila`, `/capacida
 | `/execucoes` | Execuções; comparação em `?base=&alvo=` | `runs`, `run-comparisons` |
 | `/decisoes` | Histórico de decisões (feedback do PCP) | `feedback`, `priorities`, `config` |
 | `/validacao` | Central de validação (resumo, falhas e 2 abas; a aba de modelos inclui o laboratório de previsão) | `validation/summary`, `forecast-lab` |
+| `/modelo` | Confiança › Modelo de previsão: o que o modelo prevê, premissas, erro e modelos comparados | `model-benchmark` |
 | `/auditoria` | Auditoria: casos de teste, verificações, limitações, ajustes e método comercial | `validation/summary`, `partners?limit=1` |
 | `*` | Página não encontrada | Nenhum |
 

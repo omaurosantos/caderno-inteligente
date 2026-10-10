@@ -162,6 +162,15 @@
       "blocks": 5,
       "columns": 5,
       "alerts": 0
+    },
+    "/modelo": {
+      "fixed": 120,
+      "perRow": 10,
+      "perEvidence": 90,
+      "numbers": 12,
+      "blocks": 5,
+      "columns": 4,
+      "alerts": 1
     }
   }
 }

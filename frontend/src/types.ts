@@ -15,6 +15,7 @@ export type PageId =
   | 'channels'
   | 'scenarios'
   | 'capacity'
+  | 'model'
   | 'runs'
   | 'feedback'
   | 'validation'

@@ -62,6 +62,7 @@ export const navigation: Array<{ id: PageId; path: string; label: string; descri
   { id: 'runs', path: '/execucoes', label: 'Execuções', description: 'Histórico e comparação entre execuções' },
   { id: 'feedback', path: '/decisoes', label: 'Histórico de decisões', description: 'Decisões registradas pelo PCP' },
   { id: 'validation', path: '/validacao', label: 'Confiança nas recomendações', description: 'Validação dos resultados' },
+  { id: 'model', path: '/modelo', label: 'Modelo de previsão', description: 'O que o modelo prevê, premissas e modelos comparados' },
   { id: 'audit', path: '/auditoria', label: 'Auditoria', description: 'Casos de teste, método e histórico' },
 ];
 
@@ -73,7 +74,7 @@ export const menuGroups: Array<{ id: string; label: string; to: string; paths: s
   { id: 'finance', label: 'Financeiro', to: '/faturamento', paths: ['/faturamento'] },
   { id: 'partners', label: 'Comercial', to: '/parceiros', paths: ['/parceiros', '/carteira', '/canais'] },
   { id: 'decisions', label: 'Acompanhamento', to: '/casos', paths: ['/decisoes', '/casos'] },
-  { id: 'trust', label: 'Confiança', to: '/validacao', paths: ['/validacao'] },
+  { id: 'trust', label: 'Confiança', to: '/validacao', paths: ['/validacao', '/modelo'] },
   { id: 'backstage', label: 'Bastidores', to: '/auditoria', paths: ['/auditoria', '/execucoes', '/qualidade'] },
 ];
 
@@ -81,6 +82,7 @@ export const subNavigation: Record<string, Array<{ label: string; to: string }>>
   partners: [{ label: 'Oportunidades', to: '/parceiros' }, { label: 'Parceiros', to: '/carteira' }, { label: 'Canais diretos', to: '/canais' }],
   backstage: [{ label: 'Auditoria', to: '/auditoria' }, { label: 'Execuções', to: '/execucoes' }, { label: 'Dados da planilha', to: '/qualidade' }],
   decisions: [{ label: 'Casos', to: '/casos' }, { label: 'Histórico de decisões', to: '/decisoes' }],
+  trust: [{ label: 'Validação', to: '/validacao' }, { label: 'Modelo de previsão', to: '/modelo' }],
 };
 
 const inGroup = (pathname: string, paths: string[]) => paths.some((path) => path === '/' ? pathname === '/' : !!matchPath({ path, end: false }, pathname));

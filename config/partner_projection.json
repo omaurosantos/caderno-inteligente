@@ -1,0 +1,10 @@
+{
+  "window_months": 6,
+  "horizon_months": 3,
+  "days_per_month": 30,
+  "target_coverage_days": 30,
+  "evaluation": {
+    "first_origin": "2026-02",
+    "last_origin": "2026-05"
+  }
+}

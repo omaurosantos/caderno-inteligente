@@ -25,8 +25,10 @@ A API FastAPI expõe prioridades, previsão, recomendação, visão comercial, q
 | GET | `/api/partners/{codigo}` | Resumo do parceiro | — |
 | GET | `/api/partners/{codigo}/skus` | Matriz parceiro–SKU com evidências mensais | — |
 | GET | `/api/commercial-recommendations` | Sugestões comerciais entre parceiros | — |
+| GET | `/api/partner-stock-projection` | Projeção de estoque no parceiro por par parceiro–SKU, com erros de sell-in e sell-out (sem tela; aguarda validação do grupo) | — |
 | GET | `/api/validation/summary` | Central de validação da Semana 4 | — |
 | GET | `/api/forecast-lab` | Laboratório de previsão (Etapa 14.3): motor atual × motor rolante, avaliação aninhada e grade de sensibilidade; não altera nada oficial | — |
+| GET | `/api/model-benchmark` | Cartão do modelo oficial (o que prevê, premissas, erro) e última rodada do benchmark de modelos, com histórico | — |
 | GET | `/api/runs` · `/api/runs/{id}` | Execuções registradas | — |
 | GET | `/api/run-comparisons?base=&target=` | Comparação entre duas execuções | — |
 | GET | `/api/config` | Pesos, limiares e listas válidas | — |
@@ -198,6 +200,32 @@ Leitura aditiva e somente leitura para o bloco "Modelos candidatos (laboratório
 - `intervals` (Etapa 14.4): faixa de previsão P10–P90 do motor rolante: `level`, `skus_with_band`, `skus_without_band`, `calibration` (cobertura medida fora da amostra) e `items[]` (faixa do próximo mês por SKU). Estimativa; a cobertura observada na base atual (48%) fica abaixo dos 80% nominais.
 - `field_nature` e `limitations`, no padrão dos demais endpoints.
 - O cálculo leva alguns segundos na primeira chamada; o resultado fica em cache até a planilha ou `config/forecast_engine.json` mudarem. Configuração inválida devolve 422.
+
+## `GET /api/model-benchmark`
+
+Leitura aditiva para a aba Confiança › Modelo de previsão (`/modelo`). Não altera previsão, ranking, score nem recomendação oficiais (um teste compara `/api/forecasts` antes e depois).
+
+- `official`: cartão do modelo em uso, montado da configuração (`config/forecast_engine.json`) e da previsão oficial já calculada:
+  - `engine`, `engine_label`, `target` (o que é previsto, fonte e granularidade) e `horizon_months`;
+  - `models[]`: a cadeia na ordem em que é tentada, com histórico mínimo e quantos SKUs usaram cada modelo;
+  - `data`: SKUs e SKUs com previsão, meses de histórico;
+  - `assumptions[]`: premissas em texto, com os limites lidos da configuração (por exemplo, a razão sazonal);
+  - `evaluation`: origens, horizonte, meses de pico, `wape`, `peak_wape`, `normal_wape`, `bias` e pontos avaliados (nulo no motor v1);
+  - `confidence` (regra e SKUs por nível) e `limitations[]`.
+- `benchmark`: a rodada mais recente gravada em `runtime/benchmarks.db` por `scripts/benchmark_models.py`:
+  - sem banco ou sem rodada: `status = "no_run"`, `stale = null`, `run = null`, `history = []`, e uma `note` com o comando para gerar a rodada. A leitura não cria o arquivo;
+  - com rodada: `status = "ok"`, `stale` (o hash SHA-256 da planilha mudou desde a rodada) com `note`, `run` (`id`, `created_at`, `source_hash`, `protocol`, `environment`, `results[]`) e `history[]` (resumo de cada rodada, com o modelo de menor WAPE);
+  - `results[]`: medidos primeiro, do menor para o maior WAPE; `unavailable` (biblioteca ausente) e `failed` (erro na execução) vêm por último, com `wape` nulo, nunca zero. Cada item traz `library_version`, `params`, `wape`, `peak_wape`, `normal_wape`, `bias`, `evaluated_points`, `fallback_points`, `duration_seconds`, `is_official` e `beats_official`.
+- O banco do benchmark é só SQLite local: na publicação da Vercel, `runtime/` não é enviado e o endpoint responde `no_run`.
+
+## `GET /api/partner-stock-projection`
+
+**Sem tela, aguardando validação do grupo.** Somente leitura; não alimenta ranking, recomendação comercial nem plano. Configuração: `config/partner_projection.json`.
+
+- Filtros opcionais `partner` e `sku` (até 40 letras, números, espaço, `_`, `.` ou `-`; fora disso, 422). Código sem sell-out informado devolve 404. Os erros agregados continuam os da base inteira quando há filtro.
+- `errors.sell_out` e `errors.sell_in`: `wape`, `bias` e `points` da média usada, medidos nas origens configuradas. Cada item traz os mesmos erros só do par, para a tela poder exibir a incerteza.
+- `items[]` por par: `current_stock`, `forecast_monthly_sell_out`, `coverage_days_now`, `replenishment_to_target`, `months` e `scenarios` (`with_replenishment` e `without_replenishment`, cada um com `monthly_sell_in`, `projected_stock[]`, `stockout_month` e `coverage_days_end`). Par com mês faltante na janela: `status = "insufficient_data"`, valores nulos e `reason`.
+- `method` (fórmulas e configuração), `pairs`, `pairs_with_projection`, `total`, `limitations`, `nature = "estimado"` e `requires_human_review = true`.
 
 ## Etapa 5 — `GET /api/validation/summary`
 

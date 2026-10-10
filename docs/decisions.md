@@ -176,3 +176,19 @@ Origem: [proposta-melhorias.md](proposta-melhorias.md), fase 3. Detalhes em [fas
 - **Versão dos dados:** incrementada na mesma transação de cada gravação. As instâncias consultam a versão a cada 5 s, e a instância que gravou recalcula na hora.
 - **SQLite local para o cadastro:** sem `DATABASE_URL`, o cadastro usa `runtime/dataset.db`, o que permite testar o fluxo inteiro sem PostgreSQL.
 - **Login desligado temporariamente (pedido do usuário):** `AUTH_REQUIRED=false` é o padrão, e o cadastro de SKU fica liberado. O login não foi removido; volta com `AUTH_REQUIRED=true`.
+
+## 2026-10-09 — Benchmark de modelos e aba Modelo de previsão
+
+Origem: reunião do grupo que pediu avaliar modelos de machine learning e dar transparência às premissas.
+
+- **Benchmark fora da API:** Prophet, statsforecast, scikit-learn e LightGBM ficam em `requirements-ml.txt` e rodam por `scripts/benchmark_models.py`. A API publicada continua só com `requirements.txt`, porque as bibliotecas somariam de 120 a 320 MB a uma função Python com limite de 500 MB na Vercel.
+- **Histórico em SQLite local** (`runtime/benchmarks.db`), não em arquivo versionado nem no Supabase: cada rodada guarda o protocolo, o hash da planilha, o ambiente e um resultado por modelo.
+- **Sem cron:** a base é uma planilha que muda pouco. A rodada é refeita quando a planilha muda, e a tela avisa quando a última rodada é de outra planilha.
+- **Modelo oficial mantido:** nenhum modelo superou o `seasonal_level` (8,0%) no protocolo de avaliação; o melhor foi AutoARIMA (13,3%) e o Prophet ficou em 36,4%. Detalhes em [cálculos](calculations.md#30-benchmark-de-modelos-model_benchmarkpy-fora-do-pipeline-oficial).
+- **Tela:** rota `/modelo` em Confiança, em aba ao lado da Validação, com orçamento de volume próprio, porque a Validação já usa quase todo o seu.
+
+## 2026-10-09 — Projeção de estoque no parceiro só no backend
+
+- **Escopo:** API pronta (`GET /api/partner-stock-projection`), sem tela, até o grupo validar.
+- **Método:** média de 6 meses para sell-out e sell-in, a de menor erro medida (26,4% e 28,2%). O cenário sem reposição acompanha o cenário com reposição porque não depende de prever sell-in.
+- **Erro sempre exposto:** os erros de sell-in e de sell-out saem em toda resposta, no agregado e por par, para a tela poder mostrar a incerteza se for aprovada.

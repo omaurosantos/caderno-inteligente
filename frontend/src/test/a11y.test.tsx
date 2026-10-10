@@ -31,6 +31,7 @@ const PAGES: Array<[string, string]> = [
   ['/execucoes?base=1&alvo=2', 'O que mudou entre duas execuções'],
   ['/decisoes', 'Histórico de decisões'],
   ['/validacao', 'Quanto confiar nas recomendações'],
+  ['/modelo', 'O que o modelo prevê e quanto erra'],
   ['/auditoria', 'Auditoria: como os resultados foram testados'],
   ['/rota-inexistente', 'Página não encontrada'],
 ];
