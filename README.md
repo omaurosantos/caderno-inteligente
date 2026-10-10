@@ -22,6 +22,7 @@ Protótipo de apoio à decisão do PCP em uma cadeia B2B2C. Ele lê uma base XLS
 | Qual a ação do desafio para cada SKU, parceiro ou canal? | Fila operacional, Comercial e Canais diretos: rótulo (Produzir, Repor, Priorizar produção, Priorizar parceiro, Ampliar mix, Recomendar recompra, Monitorar, Investigar, Sem ação necessária) com evidências e filtro; a legenda está no Guia |
 | Como vão os canais diretos? | Comercial › Canais diretos: faturamento observado, tendência, carteira e sugestão por SKU, sem estoque por canal; achados entre abas em Dados da planilha |
 | Que evento do calendário vem aí e quando decidir? | Início e Fila operacional: alertas de eventos com data de decisão (início − lead time); no SKU, evidência histórica e cenário com evento, sempre como estimativa |
+| O que o modelo de previsão faz e quais premissas usa? | Confiança › Modelo de previsão: o que é previsto, premissas, erro medido e comparação com outros modelos (statsforecast, scikit-learn, LightGBM, Prophet) |
 | Quanto confiar na análise? | Confiança › Validação e Bastidores › Dados da planilha: erro da previsão em meses normais e de pico, cobertura de sell-out, divergência do cadastro, casos congelados e falhas conhecidas |
 | Por que a prioridade mudou? | Bastidores › Execuções: comparação entre snapshots, com decomposição do score |
 | O que foi decidido? | Acompanhamento › Casos (status, responsável e prazo editáveis) e Histórico de decisões: ação, efeito do dado do parceiro e tempo de análise |
@@ -69,6 +70,16 @@ npm run dev
 
 Acesse `http://127.0.0.1:5173`. O Vite encaminha `/api` para `127.0.0.1:8000`.
 
+### Benchmark de modelos (opcional)
+
+Compara a previsão oficial com statsforecast, scikit-learn, LightGBM e Prophet nas mesmas datas de avaliação e grava a rodada em `runtime/benchmarks.db`, exibida em Confiança › Modelo de previsão. As bibliotecas ficam fora da API publicada.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-ml.txt
+.\.venv\Scripts\python.exe scripts\benchmark_models.py                 # modelos rápidos (cerca de 1 minuto)
+.\.venv\Scripts\python.exe scripts\benchmark_models.py --include-slow  # inclui Prophet (dezenas de minutos)
+```
+
 ## Interface
 
 O menu tem 8 entradas (Início, Planejamento, SKUs, Financeiro, Comercial, Acompanhamento, Confiança, Bastidores) e o botão **Ajuda** (guia) na barra superior. As rotas agrupadas aparecem como abas e continuam abrindo por URL. Não há grupo "Avançado": Cenários fica em Planejamento e Execuções em Confiança.
@@ -92,6 +103,7 @@ O menu tem 8 entradas (Início, Planejamento, SKUs, Financeiro, Comercial, Acomp
 | `/execucoes` | Bastidores › Execuções: `?base=&alvo=` compara duas execuções |
 | `/decisoes` | Acompanhamento › Histórico de decisões; registrar exige escolher o SKU (ou vir de `?sku=`) |
 | `/validacao` | Confiança › Validação: resumo, 3 números, falhas conhecidas e 2 abas, com exportação CSV e impressão |
+| `/modelo` | Confiança › Modelo de previsão: o que é previsto, premissas, erro medido e modelos comparados no benchmark |
 | `/auditoria` | Bastidores › Auditoria (blocos recolhidos): casos de teste congelados, verificações de segurança, limitações, histórico de ajustes e método comercial |
 
 Rotas inexistentes mostram uma página 404. O `frontend/vercel.json` redireciona deep links para o `index.html`, permitindo abrir ou atualizar qualquer URL interna.

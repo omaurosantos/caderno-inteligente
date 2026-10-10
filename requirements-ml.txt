@@ -1,0 +1,7 @@
+# Bibliotecas usadas só pelo benchmark de modelos (scripts/benchmark_models.py).
+# Não fazem parte da API publicada: a Vercel instala apenas requirements.txt.
+-r requirements.txt
+prophet>=1.1,<2
+statsforecast>=2,<3
+scikit-learn>=1.5,<2
+lightgbm>=4,<5

@@ -50,6 +50,14 @@ Seis regras saem dos indicadores e cinco do plano datado (falta projetada, OP de
   - Com média anterior zero: crescente se a recente for positiva, estável se também for zero.
 - **Horizonte do v1:** 3 meses; no v2, 6 meses (acima).
 
+### 3.0 Benchmark de modelos (`model_benchmark.py`, fora do pipeline oficial)
+
+- **Para que serve:** comparar a previsão oficial com modelos de bibliotecas conhecidas no mesmo protocolo. É evidência; trocar o modelo oficial continua exigindo os critérios de `promotion`.
+- **Protocolo:** as mesmas origens de `evaluation` (2025-11 a 2026-05), cada uma prevendo os 3 meses seguintes só com os meses até ela. O erro é o WAPE agrupado de todas as origens e SKUs, também separado em meses de pico e normais, com o viés `Σ(previsto − real) ÷ Σ real`.
+- **Modelos:** motor oficial; repetir o último mês (baseline); AutoETS, AutoARIMA e AutoTheta sazonais (statsforecast, sazonalidade de 12 meses); gradient boosting do scikit-learn e LightGBM, cada um como um único modelo para todos os SKUs, prevendo a razão entre o mês-alvo e o nível recente a partir do mês, do horizonte, do mesmo mês do ano anterior e do nível de um ano antes; Prophet, um modelo por SKU com sazonalidade anual multiplicativa (lento, só com `--include-slow`).
+- **Lacunas:** quando um modelo não prevê um SKU numa origem, vale a previsão oficial naquele ponto e o ponto é contado em `fallback_points`. Biblioteca ausente vira `unavailable` e erro na execução vira `failed`, sempre sem erro numérico.
+- **Resultado em 09/10/2026** (planilha com 24 meses, 50 SKUs): oficial 8,0% (pico 7,9%); AutoARIMA 13,3% (22,8%); LightGBM 14,4% (27,4%); gradient boosting 14,9% (29,0%); AutoETS 16,0% (22,4%); AutoTheta 16,9% (24,8%); baseline 18,9% (26,8%); Prophet 36,4% (32,9%), medido no teste exploratório. Nenhum modelo superou o oficial. Com 24 meses, os modelos sazonais de prateleira não têm dois ciclos completos para aprender a sazonalidade anual; Holt-Winters ficou de fora por exigir 24 meses de treino.
+
 ### 3.1 Faturamento estimado (`revenue.py`)
 
 ```text
@@ -193,6 +201,14 @@ Usa apenas chaves reais parceiro–SKU–mês. O estoque considerado é o estoqu
 Janela de acúmulo (Etapa 15.5, 6 meses): `sell-through = sell-out ÷ sell-in`, estoque inicial (mês anterior à janela) → final e a conta `estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t)` conferida mês a mês. O sinal de acúmulo do parceiro sobe para o SKU (regra `PARTNER_STOCK_BUILDUP`) sem distribuir o estoque do CD.
 
 Sinais, limiares e precedência das ações estão em [regras comerciais](commercial-rules.md).
+
+### 5.1 Projeção de estoque no parceiro (`partner_stock_projection.py`, sem tela)
+
+- **Identidade:** `estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t)`. Ela fecha, com tolerância de 1 unidade, em 100% dos meses dos 50 pares da base.
+- **Sell-out previsto:** média dos últimos 6 meses do par. Foi a janela de menor erro entre último mês, 3 e 6 meses (origens fev a mai/2026, 3 meses à frente): sell-out 32,7% / 28,0% / 26,4% e sell-in 35,4% / 29,7% / 28,2%.
+- **Cenários:** com reposição (sell-in igual à média de 6 meses) e sem reposição (sell-in zero). O segundo não depende de prever sell-in.
+- **Saídas:** estoque projetado nos 3 meses seguintes ao último mês observado, mês de ruptura (primeiro mês com estoque ≤ 0), cobertura em dias (`estoque ÷ sell-out previsto/30`) e reposição até a cobertura-alvo de 30 dias ao fim do próximo mês.
+- **Limites:** 12 meses por par não permitem captar sazonalidade; só os 50 pares com sell-out (20% dos possíveis) têm projeção.
 
 ## 6. Central de validação (`validation_center.py`)
 

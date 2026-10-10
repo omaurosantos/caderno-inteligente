@@ -28,6 +28,7 @@ const ScenariosPage = lazy(() => import('./pages/ScenariosPage'));
 const RunsPage = lazy(() => import('./pages/RunsPage'));
 const FeedbackPage = lazy(() => import('./pages/FeedbackPage'));
 const ValidationPage = lazy(() => import('./pages/ValidationPage'));
+const ModelPage = lazy(() => import('./pages/ModelPage'));
 const SkuDetailPage = lazy(() => import('./pages/SkuDetailPage'));
 const SkuListPage = lazy(() => import('./pages/SkuListPage'));
 const AuditoriaPage = lazy(() => import('./pages/AuditoriaPage'));
@@ -129,6 +130,7 @@ function App() {
             <Route path="/execucoes" element={<PageResource key="RunsPage" fields={PAGE_FIELDS.RunsPage} refreshToken={refreshToken}>{(dashboard, reload) => <RunsPage data={dashboard} onSelect={selectSku} onRefresh={reload} />}</PageResource>} />
             <Route path="/decisoes" element={<PageResource key="FeedbackPage" fields={PAGE_FIELDS.FeedbackPage} refreshToken={refreshToken}>{(dashboard, reload) => <FeedbackPage data={dashboard} onSelect={selectSku} onRefresh={reload} />}</PageResource>} />
             <Route path="/validacao" element={<ValidationPage refreshToken={refreshToken} />} />
+            <Route path="/modelo" element={<ModelPage refreshToken={refreshToken} />} />
             <Route path="/auditoria" element={<AuditoriaPage refreshToken={refreshToken} />} />
             <Route path="/skus" element={<SkuListPage refreshToken={refreshToken} />} />
             <Route path="/skus/:sku"element={<SkuDetailPage key={location.pathname} refreshToken={refreshToken} />} />
