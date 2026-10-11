@@ -182,8 +182,8 @@
       "title": "Parceiro com dado ausente ou desatualizado",
       "kind": "commercial",
       "origin": "base",
-      "partner": "E-commerce",
-      "sku": "CI-0009",
+      "partner": "KA-01",
+      "sku": "CI-0012",
       "expected": {
         "action": "dados_insuficientes",
         "signals": {"includes": ["INSUFFICIENT_PARTNER_DATA"]},
@@ -191,7 +191,7 @@
         "coverage_days": {"is_null": true},
         "requires_human_review": true
       },
-      "limitation": "Ausência de sell-out não é venda zero; o sistema deve recusar a recomendação, não estimá-la."
+      "limitation": "Ausência de sell-out não é venda zero; o sistema deve recusar a recomendação, não estimá-la. Par trocado na Etapa 16.1: E-commerce · CI-0009 passou a ter venda direta observada pelo faturamento; KA-01 · CI-0012 segue sem sell-out nos 3 meses recentes, com carteira aberta."
     },
     {
       "id": "VC-08",
@@ -220,12 +220,12 @@
     },
     {
       "id": "VC-10",
-      "title": "Priorizar produção por posição na fila",
+      "title": "Priorizar produção pela faixa de urgência",
       "kind": "challenge_action",
       "origin": "synthetic",
-      "origin_reason": "Cobre Priorizar produção pelo critério de fila: ação de produzir e posição 3 entre as 10 primeiras.",
-      "input": {"level": "operational", "action": "produzir", "priority": 3, "forecast_status": "ok", "event_alerts": [], "capacity_status": "family_context_available", "reference_date": "2026-08-31"},
-      "expected": {"code": "priorizar_producao", "signals_used": {"includes": ["priority_top_10"]}, "requires_human_review": true},
+      "origin_reason": "Cobre Priorizar produção pelo critério de faixa: ação de produzir, faixa 1 de urgência e ordem urgente a liberar; a posição na fila sozinha não promove mais (Etapa 16.4).",
+      "input": {"level": "operational", "action": "produzir", "priority": 3, "forecast_status": "ok", "event_alerts": [], "capacity_status": "family_context_available", "reference_date": "2026-08-31", "context": {"urgency_tier": 1, "discontinued": false, "uncovered_orders": [], "contested": false, "decision_text": null, "first_client": null, "last_client": null, "urgent_planned_quantity": 50, "next_urgent_release_date": "2026-09-03", "first_planned_release_date": "2026-09-03", "anticipable_ops": [], "forecast_only_shortfall": false, "first_shortfall_date": null, "decision_window_end": "2026-09-28", "capacity_status": null, "reference_date": "2026-08-31"}},
+      "expected": {"code": "priorizar_producao", "signals_used": {"includes": ["urgency_tier_1"], "excludes": ["priority_top_10"]}, "requires_human_review": true},
       "limitation": "Entrada sintética: comprova a regra do rótulo, não a ocorrência do caso na operação."
     },
     {
@@ -327,7 +327,8 @@
       "expected": {
         "action": "atraso_inevitavel",
         "affected_order_ids": {"includes": ["PED-041-1", "PED-041-2"]},
-        "challenge_code": "priorizar_producao",
+        "challenge_code": "priorizar_parceiro",
+        "lever": "alocar",
         "requires_human_review": true
       },
       "limitation": "1.046 un. prometidas para 13 e 14/09 contra estoque de 132; a OP-7840 conclui em 08/10 e nem uma ordem liberada em 14/09 chegaria a tempo (lead time de 21 dias). Gravado em 2026-10-07 (Etapa 15.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
@@ -451,7 +452,7 @@
       "origin": "base",
       "family": "Escolar",
       "expected": {
-        "peak_status": {"in": ["pre_producao", "insuficiente", "a_confirmar"]},
+        "peak_status": {"in": ["pre_producao", "insuficiente", "insuficiente_estimado", "a_confirmar"]},
         "peak_need_units": {"positive": true},
         "available_until_calendar_end": {"positive": true}
       },
@@ -469,6 +470,105 @@
         "requires_human_review": true
       },
       "limitation": "Cobertura cadastrada de 55 dias usa Venda média/dia de 27,1; a média real dos últimos 12 meses é ~1.505 un./mês (×1,85). Gravado em 2026-10-07 (Etapa 15.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
+    },
+    {
+      "id": "VC-31",
+      "title": "Parceiro sem estoque informado não vira ruptura",
+      "kind": "commercial",
+      "origin": "base",
+      "partner": "E-commerce",
+      "sku": "CI-0009",
+      "expected": {
+        "action": "canal_direto",
+        "data_quality": "sufficient",
+        "estimated_stock": {
+          "is_null": true
+        },
+        "challenge_code": "investigar",
+        "requires_human_review": true
+      },
+      "limitation": "E-commerce · CI-0009 é canal direto sem estoque de parceiro informado; o estoque estimado deve ficar nulo, sem virar zero nem divergência de dado. Liberado na Etapa 16.1: o rótulo é o da API para canal direto (sugestão de canais diretos); aqui a queda real das vendas diretas (-11% recente, -35% a/a) leva a Investigar por queda do canal, não por dado insuficiente. Gravado em 2026-10-10 (Etapa 16.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
+    },
+    {
+      "id": "VC-32",
+      "title": "Pico estimado de SKU parado não passa à frente de SKU ativo de maior valor",
+      "kind": "operational",
+      "origin": "base",
+      "sku": "CI-0047",
+      "expected": {
+        "challenge_code": {
+          "in": [
+            "monitorar",
+            "investigar"
+          ]
+        },
+        "value_at_risk_estimated": {
+          "is_null": true
+        },
+        "outranks_higher_value_active": false,
+        "requires_human_review": true
+      },
+      "limitation": "CI-0047 aparece no topo da fila por pico de demanda estimado, sem carteira nem sell-out ativo que o sustente. Gravado em 2026-10-10 (Etapa 16.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
+    },
+    {
+      "id": "VC-33",
+      "title": "SKU disputado por vários clientes tem fila de alocação com motivo",
+      "kind": "allocation",
+      "origin": "base",
+      "sku": "CI-0041",
+      "expected": {
+        "contested": true,
+        "ranked_clients": {
+          "includes": [
+            "KA-02",
+            "KA-05"
+          ]
+        },
+        "orders_with_reason": {
+          "positive": true
+        },
+        "requires_human_review": true
+      },
+      "limitation": "CI-0041 tem pedidos de mais de um cliente e oferta que não cobre todos; cada pedido deve receber ordem e motivo. Gravado em 2026-10-10 (Etapa 16.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
+    },
+    {
+      "id": "VC-34",
+      "title": "Cliente com estoque acumulado no parceiro fica por último no empate",
+      "kind": "allocation",
+      "origin": "synthetic",
+      "origin_reason": "A base atual não tem dois pedidos idênticos (mesmo SKU, data e quantidade) de clientes com sinais de parceiro diferentes.",
+      "input": {
+        "sku": "SINT-VC34",
+        "reference_date": "2026-09-14",
+        "supply_units": 100,
+        "orders": [
+          {
+            "client": "KA-T1",
+            "sku": "SINT-VC34",
+            "quantity": 100,
+            "promised_date": "2026-11-10"
+          },
+          {
+            "client": "KA-T2",
+            "sku": "SINT-VC34",
+            "quantity": 100,
+            "promised_date": "2026-11-10"
+          }
+        ],
+        "partner_signals": {
+          "KA-T1": [
+            "PARTNER_STOCK_BUILDUP"
+          ]
+        },
+        "partner_coverage_days": {
+          "KA-T1": 60
+        }
+      },
+      "expected": {
+        "last_client": "KA-T1",
+        "requires_human_review": true
+      },
+      "limitation": "Entrada sintética: comprova o desempate pela regra de alocação, não a ocorrência do caso na operação. Gravado em 2026-10-10 (Etapa 16.0), antes do código que o atende; campos novos do resultado são criados pela subetapa indicada."
     }
   ],
   "adjustments": [
@@ -576,6 +676,62 @@
       "reason": "O caso que abre o PDF (venda ao parceiro que parece bom resultado, mas o produto está parado) não era detectado: KA-02 · CI-0009 aparecia como divergência de dado, embora a conta de estoque feche em todos os meses, e a regra de excesso exigia giro ≤ 30 un./mês.",
       "evidence": "docs/historico.md — Etapa 15.5",
       "changed_weights_or_models": true
+    },
+    {
+      "date": "2026-10-10",
+      "change": "Acrescentados VC-31 a VC-34 como casos pendentes (pending_until 16.1 a 16.3): canal direto sem estoque de parceiro, pico estimado de SKU parado, SKU disputado e desempate por estoque acumulado no parceiro.",
+      "reason": "Casos-alvo gravados antes do código que os atende, conforme o protocolo da Etapa 15; não são usados para ajustar pesos, limiares ou modelos.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T0)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-07 passou do par E-commerce · CI-0009 para KA-01 · CI-0012 (primeiro par KA sem sell-out recente, com carteira aberta; a base mantém 23 pares KA nessa condição).",
+      "reason": "Etapa 16.1: o canal direto passou a ter venda observada pelo faturamento (Vendas_24m), então E-commerce · CI-0009 deixou de ser dado ausente. A intenção do caso (dado ausente deve ser recusado, não estimado) continua valendo para quem de fato não tem sell-out.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T1Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-29 passou a aceitar peak_status insuficiente_estimado, além de pre_producao, insuficiente e a_confirmar. Na base atual a Linha Escolar continua com peak_status insuficiente (falta observada em dez/26), e o caso segue passando.",
+      "reason": "Etapa 16.5: a capacidade estimada além do calendário cria o status insuficiente_estimado (falta apenas estimada), que é um resultado legítimo para o pico da Volta às Aulas e não deve reprovar o caso.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T1Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-31 liberado (pending_until removido): espera ação canal_direto, dado suficiente, estoque estimado nulo e o rótulo da API para o canal direto (Investigar por queda real do canal, não por dado insuficiente). A validação passou a usar o mesmo rótulo da API para linhas de canal direto; o rótulo de apoio de linha comercial ganhou o ramo canal_direto (Monitorar).",
+      "reason": "Etapa 16.1: o canal direto tem venda observada e nenhum estoque intermediário; o caso congelado em 16.0 é atendido sem alterar pesos, limiares ou modelos. A expectativa original (rótulo diferente de Investigar) assumia que o rótulo seria de monitoramento; a regra de queda do canal direto, já existente, o leva a Investigar com motivo próprio.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T1Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-20 (CI-0041) passou a esperar challenge_code priorizar_parceiro e lever alocar, em vez de priorizar_producao. A ação operacional (atraso_inevitavel) e os pedidos afetados (PED-041-1 de KA-05 e PED-041-2 de KA-02) continuam os mesmos. Os casos operacionais da base passaram a ser rotulados pela mesma tabela de alavancas da API (contexto do plano, da alocação e da faixa do ranking).",
+      "reason": "Etapa 16.4: com dois clientes disputando pedidos sem cobertura, nenhuma produção nova chega a tempo e a decisão do momento é quem atender com o estoque existente (linha 2 da tabela de alavancas). A intenção do caso (promessa sem cobertura não fica sem ação) continua valendo.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T2Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-10 passou de 'Priorizar produção por posição na fila' para 'Priorizar produção pela faixa de urgência': a entrada ganhou context (faixa 1, ordem urgente de 50 un. a liberar em 03/09) e o esperado troca o sinal priority_top_10 por urgency_tier_1 (e exige que priority_top_10 não apareça).",
+      "reason": "Etapa 16.4: a posição na fila deixou de promover Produzir a Priorizar produção; a promoção vem da faixa 1 ou de decisão de evento na janela. O plano citava faixa 2, mas a tabela de alavancas aprovada só promove a faixa 1 (faixa 2 continua Produzir), então o caso usa a faixa 1.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T1E, T2Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-04 reexecutado com a tabela de alavancas: continua passando (CI-0041 na posição 2, ação atraso_inevitavel). Nenhuma alteração.",
+      "reason": "Etapa 16.4: revisão pedida no fechamento da Onda 2; o caso não depende do rótulo do desafio.",
+      "evidence": ".omc/plans/etapa-16-plano.md (T2Z)",
+      "changed_weights_or_models": false
+    },
+    {
+      "date": "2026-10-10",
+      "change": "VC-32, VC-33 e VC-34 liberados (pending_until removido), com as expectativas gravadas em 16.0. Novo tipo de caso allocation: na base lê a alocação do pipeline (sem ela, recalcula o SKU pelo mesmo build_allocation sobre o plano e os pares parceiro–SKU); no sintético roda build_allocation sobre a entrada. A entrada sintética de VC-34 ganhou reference_date (2026-09-14, a referência da base) e partner_coverage_days de KA-T1 (60 dias, entre os limites de cobertura baixa e alta).",
+      "reason": "Etapas 16.2 e 16.3: o código que atende os casos existe. A alocação só lê o sinal de estoque acumulando quando o par tem sell-out suficiente com cobertura estimada (dado ausente não vira ponto); sem a cobertura, o sinal de VC-34 seria ignorado. Os 60 dias não pontuam como cobertura baixa nem alta, então só o sinal decide o desempate.",
+      "evidence": "docs/discovery-etapa-16.md; .omc/plans/etapa-16-plano.md (T0, T2Z)",
+      "changed_weights_or_models": false
     }
   ]
 }

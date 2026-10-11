@@ -12,14 +12,14 @@ export const CHALLENGE_NAMES: Record<string, string> = {
   recomendar_recompra: 'Recomendar recompra', reativar: 'Reativar', monitorar: 'Monitorar', investigar: 'Investigar', sem_acao_necessaria: 'Sem ação necessária',
 };
 export const CHALLENGE_DEFINITIONS: Record<string, string> = {
-  produzir: 'Há ordem planejada no horizonte, segundo a projeção diária de estoque, carteira, previsão e OPs abertas.',
+  produzir: 'Há ordem planejada a liberar dentro da janela de decisão.',
   repor: 'O estoque estimado do parceiro cobre poucos dias do giro observado; avaliar reposição comercial.',
-  priorizar_producao: 'Produzir com urgência: o SKU está entre os primeiros da fila de atenção ou tem decisão de evento próxima.',
-  priorizar_parceiro: 'O parceiro reúne várias oportunidades de reposição, incluindo SKU entre os primeiros da fila de atenção.',
+  priorizar_producao: 'Produzir com urgência: há alavanca real de produção (antecipar uma OP, garantir quantidade para pedido sem cobertura) ou decisão de evento próxima.',
+  priorizar_parceiro: 'Decidir quem atender com o estoque existente (pedidos sem cobertura disputados) ou parceiro com várias oportunidades de reposição.',
   ampliar_mix: 'Produto ativo sem nenhum faturamento em um canal com visibilidade completa; avaliar incluí-lo no mix.',
   recomendar_recompra: 'O parceiro vende bem, mas parou de receber sell-in há mais tempo que o ritmo do próprio par; recomendar nova compra.',
   reativar: 'O SKU vendia no canal e ficou meses sem faturar; avaliar reativação.',
-  monitorar: 'Sem urgência: acompanhar excesso de estoque, saída de linha ou crescimento.',
+  monitorar: 'Sem urgência: excesso de estoque, saída de linha, crescimento ou próxima ordem planejada fora da janela.',
   investigar: 'Faltam dados ou há divergência; investigar antes de decidir. Nenhuma oportunidade é inferida.',
   sem_acao_necessaria: 'Nenhum sinal que justifique ação neste horizonte.',
 };

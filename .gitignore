@@ -28,3 +28,6 @@ Thumbs.db
 .agents/
 .claude/skills/
 skills-lock.json
+
+# Estado e planos do oh-my-claudecode (orquestração local)
+.omc/

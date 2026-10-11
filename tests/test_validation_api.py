@@ -29,8 +29,15 @@ def test_validation_summary_contract():
     natures = {(row["informed"]["nature"], row["recalculated"]["nature"]) for row in body["process_comparison"]}
     assert natures == {("informado", "recalculado")}
     cases = body["frozen_cases"]
-    assert len(cases["items"]) == 30
-    assert cases["passed"] + cases["failed"] + cases["not_found"] + cases["pending"] == 30
+    assert len(cases["items"]) == 34
+    assert cases["passed"] + cases["failed"] + cases["not_found"] + cases["pending"] == 34
+    # Fechamento da Onda 2 (Etapa 16.2–16.4): os 34 casos passam, nenhum pendente; VC-20 revisto para Priorizar parceiro.
+    results = {item["id"]: item["result"] for item in cases["items"]}
+    assert all(result == "passou" for result in results.values()) and cases["pending"] == 0 and cases["failed"] == 0
+    by_id = {item["id"]: item for item in cases["items"]}
+    assert by_id["VC-20"]["obtained"]["challenge_code"] == "priorizar_parceiro" and by_id["VC-20"]["obtained"]["lever"] == "alocar"
+    assert by_id["VC-33"]["obtained"]["contested"] is True and set(by_id["VC-33"]["obtained"]["ranked_clients"]) >= {"KA-02", "KA-05"}
+    assert by_id["VC-32"]["obtained"]["value_at_risk_estimated"] is None and by_id["VC-32"]["obtained"]["outranks_higher_value_active"] is False
     for item in cases["items"]:
         assert item["result"] in {"passou", "falhou", "nao_encontrado", "pendente"}
         assert item["limitation"] and item["adjustment"]
@@ -91,6 +98,8 @@ def test_validation_summary_survives_unavailable_persistence():
     assert body["analysis_time"]["records_with_minutes"] == 0
     assert "indisponível" in body["analysis_time"]["note"]
     assert any(item["area"] == "tempo de análise" for item in body["known_failures"])
+    # Persistência caída: o valor endereçado é ausente com motivo, nunca R$ 0.
+    assert body["addressed_value"]["observed_total"] is None and "Persistência indisponível" in body["addressed_value"]["missing_reason"]
 
 
 def test_safe_behavior_includes_missing_sku_and_api_error_coverage():
@@ -98,3 +107,28 @@ def test_safe_behavior_includes_missing_sku_and_api_error_coverage():
     assert checks["missing_sku"]["status"] == "aprovado"
     assert checks["api_error"]["status"] == "coberto_por_teste"
     assert {"missing_sell_out", "zero_holdout", "insufficient_forecast", "aggregated_capacity", "human_review", "no_false_precision"} <= set(checks)
+
+
+def test_validation_summary_exposes_impact_metrics():
+    body = TestClient(app).get("/api/validation/summary").json()
+    addressed, sop = body["addressed_value"], body["sop_divergence"]
+    assert addressed["nature"] == "observado" and addressed["note"]
+    assert (addressed["observed_total"] is None) == (addressed["sku_count"] == 0)  # sem decisão com valor: ausente, não R$ 0
+    assert addressed["observed_total"] is not None or addressed["missing_reason"]
+    assert sop["requires_human_review"] is True
+    assert addressed["sku_count"] == len(addressed["decided_skus"]) - len(addressed["skus_without_value"])
+    assert sop["threshold"] == 0.2 and sop["note"] and set(sop["months"]) <= {"2026-10", "2026-11", "2026-12"}
+    assert all(abs(item["ratio"]) > 0.2 and item["month"] in sop["months"] for item in sop["items"]) and sop["count"] == len(sop["items"])
+
+def test_rebuilt_allocation_matches_the_pipeline_order_for_every_sku():
+    """Sem a alocação do pipeline, a validação recalcula pelo mesmo núcleo; a ordem e a disputa devem ser as mesmas da API."""
+    from caderno_inteligente.partner_insights import build_partner_insights, load_commercial_thresholds
+    from caderno_inteligente.validation_center import _base_allocation
+
+    dataset = main.pipeline()[0]
+    partner_items = build_partner_insights(dataset, load_commercial_thresholds(ROOT / "config/commercial_thresholds.json"))["items"]
+    plans, piped = main.supply_plans(), main.allocation()["skus"]
+    for sku, entry in piped.items():
+        rebuilt = _base_allocation(sku, plans, partner_items, None)[0]
+        assert rebuilt["contested"] == entry["contested"], sku
+        assert [(row["order"], row["uncovered_at_promise"]) for row in rebuilt["orders"]] == [(row["order"], row["uncovered_at_promise"]) for row in entry["orders"]], sku

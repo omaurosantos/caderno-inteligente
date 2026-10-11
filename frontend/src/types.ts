@@ -1,4 +1,5 @@
-import type { ChallengeAction } from './types-actions';
+import type { ChallengeAction, DecisionsToday } from './types-actions';
+import type { AllocationSku } from './types-allocation';
 import type { EventAlert, SkuEventScenario } from './types-events';
 import type { RevenueItem } from './types-revenue';
 
@@ -36,7 +37,41 @@ export interface Evidence {
   data_origin: string[];
 }
 
-export interface Priority {
+/** Etapa 16.3: faixa de urgência (1 = pedido confirmado sem cobertura … 4 = rever OP ou excesso). */
+export type UrgencyTier = 1 | 2 | 3 | 4;
+export type AbcClass = 'A' | 'B' | 'C';
+
+/** Etapa 16.3: valor em risco (R$). Ausente nunca vira zero: `null` + `missing_reason`. */
+export interface ValueAtRisk {
+  /** Pedidos confirmados sem cobertura na data prometida × preço vigente. */
+  observed: number | null;
+  /** Falta projetada só na demanda prevista × preço. */
+  estimated: number | null;
+  /** Excesso projetado × preço (o valor da faixa 3). */
+  excess: number | null;
+  /** observed + 0,5 × estimated: chave da fila oficial dentro da faixa. */
+  weighted: number | null;
+  unit_price: number | null;
+  nature: { observed: 'observado'; estimated: 'estimado'; excess: 'calculado' };
+  missing_reason: string | null;
+  observed_basis?: 'alocacao' | 'pedidos_afetados';
+}
+
+/** Campos da fila oficial por faixa e valor (Etapa 16.3); ausentes em respostas antigas. */
+export interface PriorityImpact {
+  urgency_tier?: UrgencyTier;
+  urgency_label?: string;
+  urgency_reason?: string;
+  urgency_nature?: 'observado' | 'estimado' | 'calculado' | string;
+  value_at_risk?: ValueAtRisk;
+  /** Curva ABC do cadastro (não usada no ranking) e a medida pelo faturamento dos últimos 12 meses. */
+  abc_registry?: AbcClass | null;
+  abc_measured?: AbcClass | null;
+  /** "Pedido confirmado sem cobertura · R$ 63,9 mil em risco (KA-05, KA-02)". */
+  priority_reason?: string;
+}
+
+export interface Priority extends PriorityImpact {
   priority: number;
   sku: string;
   product: string;
@@ -89,6 +124,8 @@ export interface Overview {
   confidence_distribution: Record<string, number>;
   /** Agregado do plano de suprimento (fase 2); `null` se a agregação falhar, sem afetar os demais indicadores. */
   projected_stock: ProjectedStockSummary | null;
+  /** Etapa 16.4: decisões com prazo nos próximos 7 dias; `null` se o cálculo falhar, ausente em respostas antigas. */
+  decisions_today?: DecisionsToday | null;
 }
 
 export interface ProjectedStockReading {
@@ -149,6 +186,36 @@ export interface PartnerVisibility {
   next_level: 'Essencial' | 'Conectado' | 'Estratégico' | null;
   next_level_required_skus: number;
   next_level_requirement: string;
+  /** Etapa 16.1: canais diretos entram com a visibilidade do faturamento (não com 0% de sell-out). */
+  type?: string | null;
+  visibility_source?: VisibilitySource;
+}
+
+/** De onde vem a visão da venda ao consumidor. */
+export type VisibilitySource = 'sell_out_parceiro' | 'faturamento_direto';
+
+export interface JourneyChannelType {
+  type: string;
+  visibility_source: VisibilitySource;
+  billed_units: number;
+  observed_consumer_units: number;
+  /** Antes do teto pelo faturado (o sell-out de KA pode passar do faturado). */
+  observed_consumer_units_raw: number;
+  exceeds_billing: boolean;
+  share_observed: number;
+  without_visibility_units: number;
+}
+
+/** Etapa 16.1: jornada faturado → venda ao consumidor observada, por tipo de canal. */
+export interface VisibilityJourney {
+  window_months: string[];
+  total_units: number;
+  observed_consumer_units: number;
+  without_visibility_units: number;
+  observed_share: number;
+  by_channel_type: JourneyChannelType[];
+  nature: Record<string, string>;
+  note: string;
 }
 
 export interface B2BVisibility {
@@ -156,6 +223,7 @@ export interface B2BVisibility {
   partners: PartnerVisibility[];
   note: string;
   classification_disclaimer: string;
+  journey?: VisibilityJourney | null;
 }
 
 export interface AppConfig {
@@ -200,6 +268,38 @@ export interface DemandDivergenceWarning {
   count: number;
   items: DemandDivergenceItem[];
 }
+
+/** Etapa 16.1: Sell_In do KA difere do faturado em Vendas_24m acima do limite. */
+export interface SellInBillingDivergenceWarning {
+  code: 'SELLIN_BILLING_DIVERGENCE';
+  sheet: string;
+  count: number;
+  limit: number;
+  items: Array<{ partner: string; sell_in_units: number; billed_units: number; ratio: number }>;
+  message: string;
+}
+
+/** Etapa 16.1: faturamento por cliente quase proporcional (rateio): não serve para padrões por parceiro. */
+export interface BillingUniformSplitWarning {
+  code: 'BILLING_UNIFORM_SPLIT';
+  sheet: string;
+  count: number;
+  min_ratio: number;
+  max_ratio: number;
+  band: number;
+  message: string;
+}
+
+/** Etapa 16.3: Curva ABC do cadastro diferente da medida pelo faturamento de 12 meses. */
+export interface AbcRegistryDivergenceWarning {
+  code: 'ABC_REGISTRY_DIVERGENCE';
+  count: number;
+  items: Array<{ sku: string; registry: AbcClass; measured: AbcClass; revenue_12m: number }>;
+  message: string;
+}
+
+/** Avisos conhecidos de `DataQuality.warnings`; filtre por `code` antes de converter. */
+export type KnownDataQualityWarning = DemandDivergenceWarning | SellInBillingDivergenceWarning | BillingUniformSplitWarning | AbcRegistryDivergenceWarning;
 
 export interface DataQuality {
   errors: Array<Record<string, unknown>>;
@@ -297,6 +397,10 @@ export interface AffectedOrder { order: string; client: string; quantity: number
 
 /** Etapa 15.4: capacidade semanal finita por família. */
 export type CapacityStatus = 'ok' | 'pre_producao' | 'a_confirmar' | 'insuficiente';
+/** Etapa 16.5: status sobre semanas estimadas além do calendário da base. */
+export type EstimatedCapacityStatus = 'ok_estimado' | 'insuficiente_estimado';
+export type CapacityFamilyStatus = CapacityStatus | EstimatedCapacityStatus;
+export interface CapacityScenario { peak_status: CapacityFamilyStatus | null; unscheduled_quantity: number }
 export interface CapacityFamily {
   family: string;
   line: string;
@@ -307,13 +411,22 @@ export interface CapacityFamily {
   planned_after_calendar: number;
   unscheduled_quantity: number;
   first_shortfall_due: string | null;
-  status: CapacityStatus;
+  /** Etapa 16.5: pode ser um status estimado ('ok_estimado', 'insuficiente_estimado'). */
+  status: CapacityFamilyStatus;
   peak_months: number[];
   peak_need_units: number;
-  peak_status: CapacityStatus | null;
+  /** Idem. */
+  peak_status: CapacityFamilyStatus | null;
   skus_short: string[];
   affected_orders: Array<{ order: string; sku: string; client: string; quantity: number }>;
-  weeks: Array<{ week_start: string; maximum: number; available: number; allocated: number; remaining: number; occupation_base: number }>;
+  /** Etapa 16.5: semanas 'estimada' (além do calendário) trazem `method`; `occupation_base` pode ser nulo. */
+  weeks: Array<{ week_start: string; maximum: number; available: number; allocated: number; remaining: number; occupation_base: number | null;
+    nature?: 'observada' | 'estimada'; method?: string | null }>;
+  /** Etapa 16.5: primeira semana estimada; ausente em respostas antigas. */
+  estimated_from?: string | null;
+  planned_in_estimated?: number;
+  /** Central = capacidade máxima − média dos compromissos das últimas N semanas; conservador = menor disponível observada. */
+  scenarios?: { central: CapacityScenario; conservador: CapacityScenario };
 }
 export interface CapacityPlan {
   reference_date: string;
@@ -323,6 +436,8 @@ export interface CapacityPlan {
   assumptions: string[];
   field_nature: Record<string, { nature: string; origin: string }>;
   requires_human_review: boolean;
+  /** Etapa 16.5: parâmetros da capacidade estimada; ausente em respostas antigas. */
+  extension?: { enabled: boolean; method: string | null; lookback_weeks: number | null; scenario: string | null };
 }
 
 export interface OperationalRecommendation {
@@ -355,10 +470,20 @@ export interface OperationalRecommendation {
   projection?: Array<{ week_start: string; carteira: number; forecast_demand: number; op_receipts: number; planned_receipts: number;
     projected_end: number; projected_end_with_plan: number; below_safety: boolean; shortfall: boolean; shortfall_with_plan?: boolean }>;
   capacity?: { status: string; status_now: string; unscheduled_quantity: number; family: string;
-    orders: Array<{ index: number; due_date: string; quantity: number; status: CapacityStatus; unscheduled: number }> } | null;
+    orders: Array<{ index: number; due_date: string; quantity: number; status: CapacityFamilyStatus; unscheduled: number }> } | null;
 }
 
-export interface ForecastRecommendationSummary {
+/** Em /api/forecasts os campos de impacto são `null` para SKU fora do ranking. */
+export interface ForecastImpact {
+  urgency_tier?: UrgencyTier | null;
+  urgency_label?: string | null;
+  value_at_risk?: ValueAtRisk | null;
+  abc_registry?: AbcClass | null;
+  abc_measured?: AbcClass | null;
+  priority_reason?: string | null;
+}
+
+export interface ForecastRecommendationSummary extends ForecastImpact {
   sku: string;
   product: string;
   family: string;
@@ -385,7 +510,7 @@ export interface ForecastRecommendationSummary {
   >;
 }
 
-export interface SkuDetail {
+export interface SkuDetail extends ForecastImpact {
   indicator: SkuIndicator;
   issues: SkuIssue[];
   priority: Priority[];
@@ -399,6 +524,8 @@ export interface SkuDetail {
   event_scenario?: SkuEventScenario | null;
   operational_recommendation: OperationalRecommendation;
   limitation: string;
+  /** Etapa 16.2: "Quem atender primeiro" — bloco da alocação do SKU; `null` sem pedido aberto, ausente em respostas antigas. */
+  allocation?: AllocationSku | null;
 }
 
 export interface ScenarioResult {

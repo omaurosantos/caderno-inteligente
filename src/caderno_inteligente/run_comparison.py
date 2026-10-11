@@ -4,8 +4,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from caderno_inteligente.impact import _brl
+
 SCHEMA_VERSION = 1
-RANKING_FIELDS = ("sku", "priority", "attention_score", "confidence", "reasons")
+RANKING_FIELDS = ("sku", "priority", "attention_score", "confidence", "reasons", "urgency_tier", "value_at_risk")
+# Etapa 16.3: faixa e valor em risco só existem em snapshots novos; os antigos continuam comparáveis pelos sinais e pesos.
+OPTIONAL_RANKING_FIELDS = ("urgency_tier", "value_at_risk")
 FORECAST_FIELDS = {
     "status": "Status da previsão",
     "model": "Modelo",
@@ -84,7 +88,7 @@ def _ranking_reason(run: dict) -> str | None:
     if not isinstance(ranking, list):
         return f"Execução #{run['id']} não possui ranking em formato de lista."
     for item in ranking:
-        missing = [field for field in RANKING_FIELDS if not isinstance(item, dict) or field not in item]
+        missing = [field for field in RANKING_FIELDS if field not in OPTIONAL_RANKING_FIELDS and (not isinstance(item, dict) or field not in item)]
         if missing:
             return f"Execução #{run['id']} não preserva os campos do ranking necessários: {', '.join(missing)}."
     return None
@@ -100,7 +104,66 @@ def _evidence(item: dict) -> dict[str, dict]:
 
 def _ranking_entry(item: dict) -> dict[str, Any]:
     return {"sku": item["sku"], "product": item.get("product"), "family": item.get("family"), "priority": item["priority"],
-            "attention_score": item["attention_score"], "confidence": item["confidence"], "signals": _signals(item)}
+            "attention_score": item["attention_score"], "confidence": item["confidence"], "signals": _signals(item),
+            "urgency_tier": item.get("urgency_tier"), "urgency_label": item.get("urgency_label"), "value_at_risk": item.get("value_at_risk")}
+
+
+def _risk(item: dict, key: str) -> float | None:
+    risk = item.get("value_at_risk")
+    return _number(risk.get(key)) if isinstance(risk, dict) else None
+
+
+def _money(value: float | None) -> str:
+    return "valor não calculado" if value is None else _brl(value)
+
+
+def _signed_money(value: float | None) -> str:
+    return "n/d" if value is None else f"{'+' if value >= 0 else '−'}{_brl(abs(value))}"
+
+
+def _position(base: dict, target: dict, score_delta: float | None) -> dict[str, Any]:
+    """Etapa 16.3: diz se a mudança de posição veio da faixa, do valor em risco ou dos sinais (só desempate).
+
+    Snapshots sem faixa ordenavam pela pontuação de sinais: a explicação continua pelos pesos, como antes.
+    """
+    moved = base["priority"] != target["priority"]
+    has_base, has_target = base.get("urgency_tier") is not None, target.get("urgency_tier") is not None
+    if not (has_base and has_target):
+        if has_base or has_target:
+            line = ("Uma execução ordenava só pela pontuação de sinais e a outra por faixa de urgência e valor em risco; "
+                    "a troca de posição reflete a mudança de critério.") if moved else None
+            return {"ranking_basis": "misto", "position_driver": "criterio" if moved else None, "tier_change": None, "value_change": None, "line": line}
+        driver = "sinais" if score_delta else "outros_skus" if moved else None
+        return {"ranking_basis": "sinais", "position_driver": driver, "tier_change": None, "value_change": None, "line": None}
+    tier_change = None
+    if base["urgency_tier"] != target["urgency_tier"]:
+        tier_change = {"base": base["urgency_tier"], "target": target["urgency_tier"],
+                       "base_label": base.get("urgency_label"), "target_label": target.get("urgency_label")}
+    left, right = _risk(base, "weighted"), _risk(target, "weighted")
+    value_change = None
+    if left != right:
+        value_change = {"base": left, "target": right, "delta": _delta(left, right),
+                        "observed_delta": _delta(_risk(base, "observed"), _risk(target, "observed")),
+                        "estimated_delta": _delta(_risk(base, "estimated"), _risk(target, "estimated"))}
+    if tier_change:
+        driver = "faixa"
+        line = (f"Faixa de urgência mudou de {tier_change['base']} ({tier_change['base_label'] or 'sem rótulo'}) para "
+                f"{tier_change['target']} ({tier_change['target_label'] or 'sem rótulo'}); a faixa decide a ordem antes do valor em risco.")
+        if target.get("urgency_reason"):
+            line += f" Motivo atual: {target['urgency_reason']}"
+    elif value_change:
+        driver = "valor"
+        line = (f"Mesma faixa ({target['urgency_tier']}); o valor em risco ponderado mudou de {_money(left)} para {_money(right)} "
+                f"(observado {_signed_money(value_change['observed_delta'])}, estimado {_signed_money(value_change['estimated_delta'])}).")
+    elif score_delta:
+        driver = "sinais"
+        line = "Mesma faixa e mesmo valor em risco; a pontuação de sinais desempatou a posição."
+    elif moved:
+        driver = "outros_skus"
+        line = "Faixa, valor em risco e score iguais; a posição mudou porque outros SKUs entraram, saíram ou mudaram de faixa ou de valor."
+    else:
+        driver, line = None, None
+    return {"ranking_basis": "faixa_e_valor", "position_driver": driver, "tier_change": tier_change, "value_change": value_change, "line": line}
 
 
 def _explain(base: dict, target: dict, base_weights: dict, target_weights: dict) -> dict[str, Any]:
@@ -128,7 +191,12 @@ def _explain(base: dict, target: dict, base_weights: dict, target_weights: dict)
             lines.append(f"Sinal removido {entry['code']} ({_signed(entry['delta'])}).")
         else:
             lines.append(f"Peso de {entry['code']} mudou de {entry['base_weight']} para {entry['target_weight']} ({_signed(entry['delta'])}).")
-    if score_delta == 0 and base["priority"] != target["priority"]:
+    position = _position(base, target, score_delta)
+    if position["line"]:
+        lines.insert(0, position.pop("line"))
+    else:
+        position.pop("line")
+    if position["ranking_basis"] == "sinais" and score_delta == 0 and base["priority"] != target["priority"]:
         lines.append("Score igual; a posição mudou porque outros SKUs entraram, saíram ou mudaram de score.")
     elif score_delta and not explained:
         lines.append("A diferença de score não é explicada pelos sinais e pesos registrados nas duas execuções; revisar os snapshots.")
@@ -142,7 +210,7 @@ def _explain(base: dict, target: dict, base_weights: dict, target_weights: dict)
         for change in _dict_changes(base_evidence.get(code), target_evidence.get(code)):
             evidence_changes.append({"code": code, "field": change["key"], "base": change["base"], "target": change["target"]})
     return {"signals_added": added, "signals_removed": removed, "score_breakdown": breakdown, "score_delta_explained": explained,
-            "explanation": lines, "evidence_changes": evidence_changes}
+            **position, "explanation": lines, "evidence_changes": evidence_changes}
 
 
 def _signed(value: Any) -> str:
@@ -162,7 +230,7 @@ def _compare_ranking(base: dict, target: dict) -> dict[str, Any]:
     changed, unchanged = [], 0
     for sku in sorted(set(base_items) & set(target_items), key=lambda code: (target_items[code]["priority"], code)):
         left, right = base_items[sku], target_items[sku]
-        same = (left["priority"], left["attention_score"], left["confidence"], _signals(left)) == (right["priority"], right["attention_score"], right["confidence"], _signals(right))
+        same = (left["priority"], left["attention_score"], left["confidence"], _signals(left), left.get("urgency_tier"), left.get("value_at_risk")) ==                (right["priority"], right["attention_score"], right["confidence"], _signals(right), right.get("urgency_tier"), right.get("value_at_risk"))
         if same and _evidence(left) == _evidence(right):
             unchanged += 1
             continue
@@ -190,6 +258,8 @@ def _compare_ranking(base: dict, target: dict) -> dict[str, Any]:
             "confidence_changed": sum(item["confidence_changed"] for item in changed),
             "with_new_signals": sum(bool(item["signals_added"]) for item in changed),
             "unexplained": sum(bool(item["score_delta"]) and not item["score_delta_explained"] for item in changed),
+            "by_driver": {driver: sum(item["position_driver"] == driver for item in changed)
+                          for driver in ("faixa", "valor", "sinais", "outros_skus", "criterio")},
         },
     }
 
@@ -292,5 +362,6 @@ def compare_runs(base: dict, target: dict) -> dict[str, Any]:
             "A comparação usa somente o que cada snapshot preservou; nada é recalculado retroativamente.",
             "Cobertura B2B2C é comparada por parceiro cadastrado; dados globais de estoque, produção e forecast não são distribuídos.",
             "A explicação decompõe o score em sinais e pesos; a causa operacional de um novo sinal está nos valores de evidência.",
+            "Com faixa e valor em risco nos dois snapshots, a posição é explicada por faixa, depois valor, depois sinais (desempate).",
         ],
     }

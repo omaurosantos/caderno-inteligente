@@ -67,3 +67,15 @@ def test_forecast_summary_preserves_official_ranking_and_score():
     assert [item["priority"] for item in ranked_summaries] == [item["priority"] for item in priorities]
     assert [item["attention_score"] for item in ranked_summaries] == [item["attention_score"] for item in priorities]
     assert all(item["priority"] is None for item in summaries[len(priorities):])
+
+
+def test_forecast_items_carry_urgency_and_value_from_the_ranking():
+    items = TestClient(app).get("/api/forecasts").json()
+    for item in items:
+        assert {"urgency_tier", "urgency_label", "value_at_risk", "abc_registry", "abc_measured", "priority_reason"} <= set(item)
+        if item["priority"] is None:
+            assert item["urgency_tier"] is None and item["value_at_risk"] is None
+        else:
+            assert item["urgency_tier"] in (1, 2, 3, 4)
+            assert item["value_at_risk"]["nature"] == {"observed": "observado", "estimated": "estimado", "excess": "calculado"}
+            assert item["abc_measured"] in ("A", "B", "C", None)

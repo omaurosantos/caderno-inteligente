@@ -1,0 +1,13 @@
+{
+  "weights": {
+    "urgency": 3,
+    "direct_channel": 2,
+    "low_partner_coverage": 2,
+    "partner_buildup_or_high_coverage": -3,
+    "small_order": 1
+  },
+  "low_coverage_days": 30,
+  "high_coverage_days": 90,
+  "urgency_horizon_days": 30,
+  "allow_partial": true
+}

@@ -1,6 +1,8 @@
 // Synthetic fixtures typed against the frontend contracts. Never application data: codes start with TEST/KA-T.
-import type { CapacityPlan, AppConfig, B2BVisibility, CaseItem, DataQuality, FeedbackItem, ForecastRecommendationSummary, Overview, Priority, Run, SkuDetail } from '../types';
-import type { CommercialPage, CommercialRow, PartnerDetail, PartnerSummary } from '../types-commercial';
+import type { CapacityPlan, AppConfig, B2BVisibility, CaseItem, DataQuality, FeedbackItem, ForecastRecommendationSummary, Overview, PartnerVisibility, Priority, Run, SkuDetail, ValueAtRisk } from '../types';
+import type { AllocationRegions, AllocationResponse, AllocationSku } from '../types-allocation';
+import type { RulesCoverage } from '../types-rules';
+import type { CommercialPage, CommercialRow, ForwardProjection, PartnerDetail, PartnerSummary } from '../types-commercial';
 import type { ChallengeAction } from '../types-actions';
 import type { ChannelFinding, ChannelSkuRow, ChannelSummary, DirectChannelDetail, DirectChannelsOverview } from '../types-channels';
 import type { EventAlert, EventAnalysis, EventItem, EventScenario } from '../types-events';
@@ -17,8 +19,18 @@ export const SKU_OK = 'TEST-001';
 export const SKU_SHORT = 'TEST / 002'; // Needs URL encoding and has insufficient history.
 export const PARTNER = 'KA T1'; // Needs URL encoding.
 
+/** Etapa 16.3: valor em risco sintético; ausente fica `null` com motivo, nunca R$ 0. */
+export const valueAtRisk = (observed: number | null, estimated: number | null, overrides: Partial<ValueAtRisk> = {}): ValueAtRisk => ({
+  observed, estimated, excess: null, weighted: observed === null && estimated === null ? null : (observed ?? 0) + 0.5 * (estimated ?? 0), unit_price: 12.5,
+  nature: { observed: 'observado', estimated: 'estimado', excess: 'calculado' }, missing_reason: null, observed_basis: 'alocacao', ...overrides,
+});
+export const valueAtRiskMissing = valueAtRisk(null, null, { unit_price: null, missing_reason: 'Sem preço vigente para o SKU: o valor em risco fica indisponível.' });
+
 export function priority(sku: string, position: number, overrides: Partial<Priority> = {}): Priority {
   return {
+    urgency_tier: 1, urgency_label: 'Pedido confirmado sem cobertura', urgency_reason: 'Pedidos confirmados sem cobertura na data prometida.', urgency_nature: 'observado',
+    value_at_risk: valueAtRisk(1500 - position * 100, 400), abc_registry: 'C', abc_measured: 'A',
+    priority_reason: `Pedido confirmado sem cobertura · R$ ${1.5 - position / 10} mil em risco (KA-T)`,
     priority: position, sku, product: `Produto ${sku}`, family: position % 2 ? 'Família A' : 'Família B', attention_score: 30 - position,
     confidence: position % 2 ? 'média' : 'baixa', confidence_reason: 'Motivo sintético da confiança.',
     critical_date: '2026-09-15', critical_date_reason: 'first_promised_date', operational_gap_quantity: 120, projected_stock_quantity: -20,
@@ -60,6 +72,13 @@ export const overview: Overview = {
     limitations: ['Estoque projetado é estimativa.'],
     requires_human_review: true,
   },
+  decisions_today: {
+    window_end: '2026-09-21', count: 2,
+    items: [
+      { sku: SKU_OK, product: `Produto ${SKU_OK}`, label: 'Priorizar parceiro', lever: 'alocar', decide_by: '2026-09-15', reason: 'Atender KA-T1 antes de KA-T2. KA-T1 recebe 120 un. agora.' },
+      { sku: 'TEST-003', product: 'Agenda sintética', label: 'Priorizar produção', lever: 'antecipar_op', decide_by: '2026-09-18', reason: 'Antecipar OP-T3: ainda não iniciada.' },
+    ],
+  },
 };
 
 export const quality: DataQuality = {
@@ -67,7 +86,11 @@ export const quality: DataQuality = {
   warnings: [{ code: 'REGISTERED_DEMAND_DIVERGENCE', sheet: 'Produtos', column: 'Venda média/dia', threshold: 0.2, count: 2, description: 'Cadastro distante da demanda prevista.', items: [
     { sku: 'TEST-001', registered_daily_demand: 5, reference_daily_demand: 9, ratio: 1.8, demand_source: 'previsao_3m', coverage_days_registered: 10, coverage_days_calculated: 5.6 },
     { sku: 'TEST-002', registered_daily_demand: 10, reference_daily_demand: 5, ratio: 0.5, demand_source: 'previsao_3m', coverage_days_registered: 10, coverage_days_calculated: 20 },
-  ] }],
+  ] },
+    { code: 'SELLIN_BILLING_DIVERGENCE', sheet: 'Sell_In × Vendas_24m', count: 1, limit: 1.25, items: [{ partner: 'KA-T1', sell_in_units: 3000, billed_units: 1000, ratio: 3 }], message: 'as duas fontes não fecham.' },
+    { code: 'BILLING_UNIFORM_SPLIT', sheet: 'Vendas_24m', min_ratio: 0.92, max_ratio: 1.03, count: 8, band: 0.1, message: 'o faturamento por cliente é quase proporcional entre clientes.' },
+    { code: 'ABC_REGISTRY_DIVERGENCE', count: 1, items: [{ sku: 'TEST-001', registry: 'C', measured: 'A', revenue_12m: 120000 }], message: '1 SKU tem a Curva ABC do cadastro diferente da medida.' },
+  ],
   sheets: { Produtos: { records: 4, duplicate_keys: 0, missing_columns: [], missing_values: {} } },
   foreign_keys: [{ child_sheet: 'Estoque_Atual', orphan_count: 0 }],
   sell_out_coverage: { observed_pairs: 1, possible_pairs: 4, coverage: 0.25, missing_data_is_not_zero: true },
@@ -91,14 +114,33 @@ export const challenge = (code: ChallengeAction['code'], label: string, source: 
   code, label, source, origin_action, reason, signals_used: [], evidence: [{ label: 'Posição na fila de atenção', value: 3, origin: 'ranking oficial' }, { label: 'Sem valor', value: null, origin: 'teste' }],
   limitations: ['Não cria nem libera ordem de produção; a quantidade oficial não muda.'], requires_human_review: true,
 });
-export const challengeUrgent = challenge('priorizar_producao', 'Priorizar produção', 'operational', 'Produzir com urgência: posição 3 na fila de atenção (limite 10).', 'produzir');
-export const challengeInvestigate = challenge('investigar', 'Investigar', 'operational', 'Histórico insuficiente para prever; investigar e completar os dados antes de sugerir produção.', 'investigar_dados');
+export const challengeUrgent: ChallengeAction = { ...challenge('priorizar_producao', 'Priorizar produção', 'operational', 'Produzir com urgência: posição 3 na fila de atenção (limite 10).', 'produzir'),
+  lever: 'produzir_agora', decide_by: '2026-09-15', decide_by_reason: 'liberação da ordem urgente' };
+export const challengeInvestigate: ChallengeAction = { ...challenge('investigar', 'Investigar', 'operational', 'Histórico insuficiente para prever; investigar e completar os dados antes de sugerir produção.', 'investigar_dados'),
+  lever: 'nenhuma', decide_by: null, decide_by_reason: null };
+/** Etapa 16.4: SKU disputado → Priorizar parceiro com alavanca "alocar". */
+export const challengeAllocate: ChallengeAction = { ...challenge('priorizar_parceiro', 'Priorizar parceiro', 'operational', 'Atender KA-T1 antes de KA-T2. KA-T1 recebe 120 un. agora.', 'atraso_inevitavel'),
+  signals_used: ['ALLOCATION_CONTESTED', 'UNCOVERED_ORDER'], lever: 'alocar', decide_by: '2026-09-15', decide_by_reason: 'menor data prometida entre os pedidos sem cobertura' };
 
 export const feedback: FeedbackItem[] = [];
 
 export const b2b: B2BVisibility = {
   reference_month: '2026-08-01', note: 'Cobertura representa observação disponível.', classification_disclaimer: 'Classificação demonstrativa.',
-  partners: [{ partner: PARTNER, name: 'Parceiro sintético', observed_skus: 1, total_skus: 4, coverage: 0.25, latest_sell_out_month: '2026-08-01', months_observed: 3, level: 'Essencial', next_level: 'Conectado', next_level_required_skus: 1, next_level_requirement: 'Observar mais 1 SKU.' }],
+  partners: [{ partner: PARTNER, name: 'Parceiro sintético', observed_skus: 1, total_skus: 4, coverage: 0.25, latest_sell_out_month: '2026-08-01', months_observed: 3, level: 'Essencial', next_level: 'Conectado', next_level_required_skus: 1, next_level_requirement: 'Observar mais 1 SKU.', type: 'Parceiro varejista', visibility_source: 'sell_out_parceiro' }],
+  journey: {
+    window_months: ['2026-06', '2026-07', '2026-08'], total_units: 1000, observed_consumer_units: 700, without_visibility_units: 300, observed_share: 0.7,
+    by_channel_type: [
+      { type: 'Canal direto', visibility_source: 'faturamento_direto', billed_units: 600, observed_consumer_units: 600, observed_consumer_units_raw: 600, exceeds_billing: false, share_observed: 1, without_visibility_units: 0 },
+      { type: 'Parceiro varejista', visibility_source: 'sell_out_parceiro', billed_units: 400, observed_consumer_units: 100, observed_consumer_units_raw: 100, exceeds_billing: false, share_observed: 0.25, without_visibility_units: 300 },
+    ],
+    nature: { observed_consumer_units: 'observado: faturamento nos canais diretos e sell-out informado', without_visibility_units: 'calculado: faturado − venda ao consumidor observada' },
+    note: 'Canal direto vende ao consumidor: o faturamento é a venda observada.',
+  },
+};
+/** Canal direto na visibilidade: participação vem do faturamento, nunca 0% de sell-out. Fora de `b2b` para não mudar as telas atuais. */
+export const directVisibilityPartner: PartnerVisibility = {
+  partner: 'E-commerce', name: 'E-commerce sintético', observed_skus: 4, total_skus: 4, coverage: 1, latest_sell_out_month: null, months_observed: 3,
+  level: 'Estratégico', next_level: null, next_level_required_skus: 0, next_level_requirement: 'Manter cobertura.', type: 'Canal direto', visibility_source: 'faturamento_direto',
 };
 
 const forecastOk = {
@@ -115,9 +157,11 @@ const forecastShort = {
 
 export const forecasts: ForecastRecommendationSummary[] = [
   { sku: SKU_OK, product: `Produto ${SKU_OK}`, family: 'Família A', priority: 1, attention_score: 29, confidence: 'média', confidence_reason: 'Motivo.', forecast: forecastOk, challenge_action: challengeUrgent,
+    urgency_tier: 2, urgency_label: 'Ação de produção nas próximas 4 semanas', value_at_risk: valueAtRisk(null, 2500), abc_registry: 'B', abc_measured: 'A', priority_reason: 'Ação de produção nas próximas 4 semanas · R$ 2,5 mil estimados',
     operational_recommendation: { action: 'produzir', action_label: 'Produzir', suggested_quantity: 200, minimum_lot: 100, capacity_status: 'family_context_available', confidence: 'alta', confidence_reason: 'Motivo.', requires_human_review: true,
       secondary_actions: [], planned_quantity_horizon: 600, first_shortfall_date: null } },
   { sku: SKU_SHORT, product: `Produto ${SKU_SHORT}`, family: 'Família B', priority: 2, attention_score: 28, confidence: 'baixa', confidence_reason: 'Motivo.', forecast: forecastShort, challenge_action: challengeInvestigate,
+    urgency_tier: null, urgency_label: null, value_at_risk: null, abc_registry: null, abc_measured: null, priority_reason: null,
     operational_recommendation: { action: 'investigar_dados', action_label: 'Investigar dados', suggested_quantity: null, minimum_lot: 100, capacity_status: 'not_evaluated', confidence: 'baixa', confidence_reason: 'Histórico insuficiente.', requires_human_review: true } },
 ];
 
@@ -235,8 +279,43 @@ export const directChannels: DirectChannelsOverview = {
 };
 export const directChannelDetail: DirectChannelDetail = { ...channelMeta, challenge_labels: { ampliar_mix: 'Ampliar mix', monitorar: 'Monitorar' }, channel: channelSummary(CHANNEL, 'Loja própria', 7447799, 0.1804), total: channelRows.length, items: channelRows };
 
+/** Etapa 16.2: SKU disputado por 2 clientes; o segundo recebe parte agora e o restante com a OP. */
+export const allocationContested: AllocationSku = {
+  sku: SKU_OK, has_shortfall: true, contested: true, clients: ['KA-T1', 'KA-T2'], unit_price: 12.5,
+  orders: [
+    { order: 'PED-T1', client: 'KA-T1', client_type: 'Parceiro varejista', region: 'Sudeste', quantity: 120, promised_date: '2026-09-15', rank: 1, allocation_score: 3.2,
+      score_components: [
+        { component: 'urgencia', points: 2.8, value: 1, nature: 'observado', reason: 'Prometido para 15/09, 1 dia após a referência.' },
+        { component: 'cobertura_baixa_parceiro', points: 0.4, value: 6, nature: 'estimado', reason: 'Cobertura estimada de 6 dias no parceiro.' },
+      ],
+      allocated_now: 120, uncovered_at_promise: 0, allocated_later: [], expected_date: '2026-09-15', delay_days: 0, fifo_delay_days: 0,
+      reason: '1º na fila, pontuação 3.2: urgência (vence em 1 dia). Atendido integralmente (120 un.) até a data prometida.' },
+    { order: 'PED-T2', client: 'KA-T2', client_type: 'Distribuidor', region: 'Sul', quantity: 200, promised_date: '2026-09-16', rank: 2, allocation_score: 2.6,
+      score_components: [
+        { component: 'urgencia', points: 2.6, value: 2, nature: 'observado', reason: 'Prometido para 16/09, 2 dias após a referência.' },
+        { component: 'sem_sell_out', points: 0, value: 'insufficient', nature: 'ausente', reason: 'Sem dado do parceiro; a cobertura não é inferida.' },
+      ],
+      allocated_now: 50, uncovered_at_promise: 150, allocated_later: [{ quantity: 150, expected_date: '2026-10-05', source: 'op', source_ref: 'OP-T1' }],
+      expected_date: '2026-10-05', delay_days: 19, fifo_delay_days: null,
+      reason: '2º na fila, pontuação 2.6. Recebe 50 un. até a data prometida e o restante em 05/10 (OP-T1).' },
+  ],
+  uncovered_units_at_promise: 150, uncovered_value_at_promise: 1875,
+  decision_text: 'Atender KA-T1 (120 un.) integralmente; KA-T2 recebe 50 un. agora e o restante em 05/10 com a OP-T1',
+  first_client: 'KA-T1', last_client: 'KA-T2', orders_with_partner_data: 1,
+  data_note: '1 de 2 pedidos têm sell-out suficiente do parceiro; nos demais, urgência, canal e tamanho do pedido decidem a ordem.', orders_without_date: [],
+};
+/** SKU sem preço: o valor descoberto fica nulo com motivo. */
+export const allocationNoPrice: AllocationSku = {
+  ...allocationContested, sku: 'TEST-003', contested: false, clients: ['KA-T2'], unit_price: null, orders: [allocationContested.orders[1]],
+  uncovered_value_at_promise: null, decision_text: 'KA-T2 recebe 50 un. agora e o restante em 05/10 com a OP-T1', first_client: 'KA-T2', last_client: 'KA-T2',
+  orders_with_partner_data: 0, missing_price_reason: 'Sem preço vigente em Precos_Produtos para o SKU.',
+};
+
 export const skuDetailOk: SkuDetail = {
   indicator: indicator(SKU_OK),
+  allocation: allocationContested,
+  urgency_tier: 1, urgency_label: 'Pedido confirmado sem cobertura', value_at_risk: valueAtRisk(1875, 400), abc_registry: 'C', abc_measured: 'A',
+  priority_reason: 'Pedido confirmado sem cobertura · R$ 1,9 mil em risco (KA-T2)',
   issues: [{ sku: SKU_OK, product: `Produto ${SKU_OK}`, family: 'Família A', code: 'RUP_LEAD_TIME', description: 'Cobertura de estoque abaixo do lead time.', severity: 'alta', values_used: { coverage_days: 5 }, data_origin: ['Estoque_Atual.Estoque atual'] }],
   priority: [priorities[0]],
   score_contributions: [{ code: 'RUP_LEAD_TIME', weight: 8, description: 'Cobertura abaixo do lead time.' }],
@@ -264,6 +343,7 @@ export const skuDetailShort: SkuDetail = {
   forecast: forecastShort,
   revenue_forecast: revenueShort,
   challenge_action: challengeInvestigate,
+  allocation: null, urgency_tier: null, urgency_label: null, value_at_risk: valueAtRiskMissing, abc_registry: 'B', abc_measured: null, priority_reason: null,
   event_alerts: [],
   event_scenario: { applicable: false, note: eventItemShort.scenario_note, scenario: null },
   operational_recommendation: { ...recommendationBase, action: 'investigar_dados', action_label: 'Investigar dados', suggested_quantity: null, raw_quantity: null, forecast_next_month: null, safety_stock_quantity: null, capacity_status: 'not_evaluated', confidence: 'baixa', confidence_reason: 'Histórico insuficiente para produzir uma previsão quantitativa.', rationale: ['Investigar e completar o histórico antes de sugerir produção.'], calculation: {} },
@@ -274,8 +354,8 @@ const metadata = { challenge_labels: { repor: 'Repor', priorizar_parceiro: 'Prio
 export const partnerSummary: PartnerSummary = {
   code: PARTNER, name: 'Parceiro sintético', type: 'Key account', region: 'Sudeste', channel: 'Varejo', state: 'SP', city: 'Cidade', observed_skus: 1,
   linked_skus: 2, total_catalog_skus: 4, coverage: 0.25, latest_sell_out_month: '2026-08', backlog_quantity: 120,
-  action_counts: { avaliar_reposicao: 1, monitorar_estoque: 0, investigar_divergencia: 0, solicitar_atualizacao: 0, dados_insuficientes: 1, conter_reposicao: 0, monitorar_excesso_parceiro: 0 },
-  quality_counts: { sufficient: 1, stale: 0, insufficient: 1 },
+  action_counts: { avaliar_reposicao: 1, monitorar_estoque: 0, investigar_divergencia: 0, solicitar_atualizacao: 0, dados_insuficientes: 1, conter_reposicao: 0, monitorar_excesso_parceiro: 0, canal_direto: 0 },
+  quality_counts: { sufficient: 1, stale: 0, insufficient: 1 }, visibility_source: 'sell_out_parceiro',
   challenge_action: challenge('priorizar_parceiro', 'Priorizar parceiro', 'partner', '2 pares com oportunidade de reposição, incluindo SKU entre os 10 primeiros.', 'avaliar_reposicao'),
 };
 
@@ -291,10 +371,33 @@ export const commercialRow: CommercialRow = {
   buildup_window_months: 6, sell_through_window: null, stock_start: null, stock_growth: null, stock_identity_consistent: null,
   periods: [{ month: '2026-08', sell_in_quantity: 30, sell_out_quantity: 0, estimated_stock: null, data_nature: 'Real' }],
   challenge_action: challenge('repor', 'Repor', 'commercial', 'Cobertura estimada baixa para o giro observado; avaliar reposição.', 'avaliar_reposicao'),
+  row_kind: 'partner', visibility_source: 'sell_out_parceiro', stock_reason: null, forward_projection: null,
+  forward_projection_reason: 'Projeção do estoque do parceiro indisponível nesta execução.',
+};
+
+/** Etapa 16.6: projeção estimada que vira evidência na linha "Repor". */
+export const forwardProjection: ForwardProjection = {
+  status: 'ok', nature: 'estimado', days_until_stockout_without_replenishment: 12, replenishment_to_target: 85, sell_out_wape: 0.26, reason: null,
+};
+export const commercialRowRepor: CommercialRow = {
+  ...commercialRow, sku: 'TEST-003', product: 'Agenda sintética', data_quality: 'sufficient', estimated_stock: 40, stock_month: '2026-08', average_monthly_sell_out: 100,
+  coverage_days: 12, sell_out_recent: 300, action: 'avaliar_reposicao', action_label: 'Avaliar reposição', signals: [{ code: 'REPOSITION_OPPORTUNITY', label: 'Possível oportunidade de reposição' }],
+  forward_projection: forwardProjection, forward_projection_reason: null,
+};
+/** Etapa 16.1: linha de canal direto (sem estoque intermediário; sell-in/sell-out não se aplicam). */
+export const commercialRowDirect: CommercialRow = {
+  ...commercialRow, partner: 'E-commerce', partner_name: 'E-commerce sintético', region: 'Nacional', channel: 'Venda direta', sell_in_recent: null, sell_out_recent: 300,
+  comparable_sell_in: null, comparable_sell_out: null, comparable_difference: null, estimated_stock: null, data_nature: 'Observado (faturamento direto)', coverage_days: null,
+  data_quality: 'sufficient', signals: [], action: 'canal_direto', action_label: 'Venda direta observada',
+  recommendation_reason: 'Venda direta ao consumidor: 300 unidades nos últimos 3 meses.',
+  challenge_action: challenge('monitorar', 'Monitorar', 'channel', 'Venda direta observada pelo faturamento; acompanhar.', 'sem_acao_necessaria'),
+  row_kind: 'direct', visibility_source: 'faturamento_direto', stock_reason: 'Sem estoque intermediário: o estoque que importa é o do CD.', forward_projection: null, forward_projection_reason: null,
 };
 
 export const partnersPage: CommercialPage<PartnerSummary> = { ...metadata, items: [partnerSummary], total: 1, offset: 0, limit: 200 };
 export const partnerRows: CommercialPage<CommercialRow> = { ...metadata, items: [commercialRow], total: 1, offset: 0, limit: 50 };
+/** Página com as três formas de linha (dado insuficiente, Repor com projeção e canal direto) para as telas da Etapa 16. */
+export const commercialRowsEtapa16: CommercialPage<CommercialRow> = { ...metadata, items: [commercialRow, commercialRowRepor, commercialRowDirect], total: 3, offset: 0, limit: 50 };
 export const partnerDetail: PartnerDetail = { ...metadata, partner: partnerSummary, decisions: { attribution_available: false, items: null, reason: 'O feedback não registra o código do parceiro.' } };
 
 export const validationSummary: ValidationSummary = {
@@ -314,6 +417,11 @@ export const validationSummary: ValidationSummary = {
   frozen_cases: { frozen_at: '2026-10-05', frozen_source_sha256: 'abc', source_matches_frozen: true, source_note: null, policy: 'Política.', total: 0, passed: 0, failed: 0, not_found: 0, pending: 0, synthetic: 0, items: [] },
   safe_behavior: [{ id: 'a', label: 'Verificação', status: 'aprovado', method: 'executado', evidence: 'ok' }],
   known_failures: [], known_limitations: ['Limitação.'], adjustments: [], requires_human_review: true,
+  addressed_value: { observed_total: 1875, missing_reason: null, sku_count: 1, decided_skus: [SKU_OK, 'TEST-003'], skus_without_value: ['TEST-003'], nature: 'observado',
+    note: 'Soma do valor observado em risco de 1 SKU com decisão registrada. 1 SKU decidido sem valor observado ficou fora da soma: TEST-003.' },
+  sop_divergence: { months: ['2026-10', '2026-11'], threshold: 0.2, count: 1, compared_pairs: 4, nature: 'calculado',
+    items: [{ sku: SKU_OK, month: '2026-10', model: 150, sop: 100, ratio: 0.5 }],
+    note: 'O erro do S&OP não é mensurável: a base só traz meses futuros. A divergência é pauta de revisão.' },
 };
 
 function labCell(outer: number, minimum: number, overrides: Partial<SensitivityCell> = {}): SensitivityCell {
@@ -406,17 +514,23 @@ export const capacityPlan: CapacityPlan = {
     { family: 'Escolar', line: 'Linha Escolar', calendar_start: '2026-09-14', calendar_end: '2026-10-04', available_until_calendar_end: 1680, planned_in_calendar: 1600,
       planned_after_calendar: 400, unscheduled_quantity: 800, first_shortfall_due: '2026-10-05', status: 'insuficiente', peak_months: [11, 1, 2], peak_need_units: 1200,
       peak_status: 'insuficiente', skus_short: [SKU_OK], affected_orders: [{ order: 'PED-1', sku: SKU_OK, client: 'KA-01', quantity: 400 }],
-      weeks: [{ week_start: '2026-09-14', maximum: 1000, available: 960, allocated: 960, remaining: 0, occupation_base: 0.92 },
-        { week_start: '2026-09-21', maximum: 1000, available: 720, allocated: 640, remaining: 80, occupation_base: 0.94 }] },
+      weeks: [{ week_start: '2026-09-14', maximum: 1000, available: 960, allocated: 960, remaining: 0, occupation_base: 0.92, nature: 'observada', method: null },
+        { week_start: '2026-09-21', maximum: 1000, available: 720, allocated: 640, remaining: 80, occupation_base: 0.94, nature: 'observada', method: null },
+        { week_start: '2026-10-05', maximum: 1000, available: 700, allocated: 700, remaining: 0, occupation_base: null, nature: 'estimada', method: 'media_compromissos_8_semanas' }],
+      estimated_from: '2026-10-05', planned_in_estimated: 700,
+      scenarios: { central: { peak_status: 'insuficiente', unscheduled_quantity: 800 }, conservador: { peak_status: 'insuficiente', unscheduled_quantity: 950 } } },
     { family: 'Refis', line: 'Linha Refis', calendar_start: '2026-09-14', calendar_end: '2026-10-04', available_until_calendar_end: 8400, planned_in_calendar: 500,
       planned_after_calendar: 0, unscheduled_quantity: 0, first_shortfall_due: null, status: 'ok', peak_months: [11, 1, 2], peak_need_units: 0, peak_status: null,
-      skus_short: [], affected_orders: [], weeks: [{ week_start: '2026-09-14', maximum: 10000, available: 8400, allocated: 500, remaining: 7900, occupation_base: 0.76 }] },
+      skus_short: [], affected_orders: [], weeks: [{ week_start: '2026-09-14', maximum: 10000, available: 8400, allocated: 500, remaining: 7900, occupation_base: 0.76, nature: 'observada', method: null }],
+      estimated_from: '2026-10-05', planned_in_estimated: 0,
+      scenarios: { central: { peak_status: 'ok_estimado', unscheduled_quantity: 0 }, conservador: { peak_status: 'insuficiente_estimado', unscheduled_quantity: 120 } } },
   ],
   skus: { [SKU_OK]: { family: 'Escolar', status: 'insuficiente', status_now: 'insuficiente', status_label: 'Não cabe até a data de necessidade', unscheduled_quantity: 800, executable_quantity_now: 200 } },
-  status_labels: { ok: 'Cabe na semana planejada', insuficiente: 'Não cabe até a data de necessidade' },
+  status_labels: { ok: 'Cabe na semana planejada', insuficiente: 'Não cabe até a data de necessidade', ok_estimado: 'Cabe na capacidade estimada', insuficiente_estimado: 'Não cabe nem na capacidade estimada' },
   assumptions: ['Premissa sintética.'],
   field_nature: { allocated: { nature: 'calculado', origin: 'sintético' } },
   requires_human_review: true,
+  extension: { enabled: true, method: 'media_compromissos_8_semanas', lookback_weeks: 8, scenario: 'central' },
 };
 
 // Coerente com `forecasts`: TEST-001 (Família A) tem 200 un. sugeridas agora e 600 no horizonte; TEST-002 não tem previsão.
@@ -481,4 +595,35 @@ export const modelBenchmark: ModelBenchmark = {
       { id: 1, created_at: '2026-10-08T12:00:00+00:00', models: 2, best_model: 'official', best_wape: 0.08 },
     ],
   },
+};
+
+// Etapa 16.2: GET /api/allocation e /api/allocation/regions (coerentes com allocationContested e allocationNoPrice).
+const allocationTotals = { uncovered_units: 300, uncovered_value: null, orders: 2, skus: 2, contested_skus: [SKU_OK], shortfall_skus: [SKU_OK, 'TEST-003'] };
+const allocationLimitations = ['Alocação sugerida; não reserva estoque nem altera pedidos.', 'Sem preço vigente para TEST-003: o valor descoberto fica indisponível (não vira zero).'];
+export const allocation: AllocationResponse = {
+  reference_date: '2026-09-14', total: 2, items: [allocationContested, allocationNoPrice], totals: allocationTotals,
+  field_nature: { allocation_score: { nature: 'calculado', origin: 'config/allocation.json' } }, limitations: allocationLimitations, requires_human_review: true,
+};
+export const allocationRegions: AllocationRegions = {
+  reference_date: '2026-09-14', totals: allocationTotals, limitations: allocationLimitations, requires_human_review: true,
+  regions: [{ region: 'Sul', uncovered_units: 300, uncovered_value: null, orders: 2, skus: [SKU_OK, 'TEST-003'] }],
+};
+
+// Etapa 16.6: GET /api/rules/coverage.
+export const rulesCoverage: RulesCoverage = {
+  rules: [
+    { rule: 'RUP_LEAD_TIME', kind: 'operational', label: 'Cobertura abaixo do lead time', condition: 'Cobertura de estoque abaixo do lead time.', weight: 8, fires: 2,
+      zero_reason: null, evidence_number: null, data_needed: null, reference_case: null },
+    { rule: 'produzir', kind: 'label', label: 'Produzir', condition: 'Há ordem planejada a liberar dentro da janela de decisão.', fires: 1,
+      fires_by_level: { sku: 1, commercial: 0, partner: 0, channel: 0 }, zero_reason: null, evidence_number: null, data_needed: null, reference_case: null },
+    { rule: 'ampliar_mix', kind: 'label', label: 'Ampliar mix', condition: 'Produto ativo sem faturamento em canal com visibilidade completa.', fires: 0,
+      fires_by_level: { sku: 0, commercial: 0, partner: 0, channel: 0 }, zero_reason: 'Faturamento sem lacunas em 4 de 4 pares canal × SKU.', evidence_number: 4,
+      data_needed: 'SKU ativo sem faturamento em um canal direto nos 24 meses.', reference_case: { case: 'VC-T1', origin: 'synthetic', title: 'Ampliar mix sintético' } },
+  ],
+  precedence: [{ level: 'operational', position: 1, line: 'investigar (dado insuficiente)', code: 'investigar', code_fires: 1 }],
+  sell_out_requests: [
+    { partner: 'KA-T1', sku: SKU_OK, product: `Produto ${SKU_OK}`, backlog_quantity: 120, backlog_value: 1500, orders: ['PED-T1'] },
+    { partner: 'KA-T2', sku: 'TEST-003', product: 'Agenda sintética', backlog_quantity: 200, backlog_value: null, orders: ['PED-T2'] },
+  ],
+  field_nature: { fires: 'calculado sobre as saídas atuais' }, limitations: ['Caso de referência sintético comprova a regra, não a ocorrência na operação.'], requires_human_review: true,
 };

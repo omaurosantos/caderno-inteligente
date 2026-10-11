@@ -8,25 +8,28 @@ A API FastAPI expõe prioridades, previsão, recomendação, visão comercial, q
 |---|---|---|---|
 | GET | `/api/health` | Fonte, banco, persistência e cache | — |
 | GET | `/api/system` | Ambiente, modo demonstração, escrita habilitada, fonte dos dados (`data_source`), login configurado (`auth_enabled`) e limites de texto | — |
-| GET | `/api/overview` | Indicadores da visão geral, inclusive o estoque projetado (`projected_stock`) | — |
-| GET | `/api/priorities` | Ranking oficial (`family`, `confidence`, `search`) | — |
-| GET | `/api/priorities/{sku}` | Detalhe: indicador, sinais, contribuições, previsão, faturamento estimado (`revenue_forecast`), eventos (`event_alerts`, `event_scenario`) e recomendação | — |
+| GET | `/api/overview` | Indicadores da visão geral, inclusive o estoque projetado (`projected_stock`) e as decisões de hoje (`decisions_today`) | — |
+| GET | `/api/priorities` | Ranking oficial por faixa de urgência e valor em risco (`family`, `confidence`, `search`) | — |
+| GET | `/api/priorities/{sku}` | Detalhe: indicador, sinais, contribuições, faixa e valor em risco, alocação (`allocation`), previsão, faturamento estimado (`revenue_forecast`), eventos (`event_alerts`, `event_scenario`) e recomendação | — |
 | GET | `/api/forecasts` | Previsão e recomendação resumida de todos os SKUs | — |
 | GET | `/api/revenue-forecast` | Faturamento estimado (previsão em unidades × preço vigente), por SKU, família e total | — |
 | GET | `/api/events` | Calendário de eventos: alertas por SKU, evidência histórica por família e cenário com evento | — |
 | GET | `/api/direct-channels` · `/api/direct-channels/{canal}` | Canais diretos (E-commerce, Marketplace, Loja própria): faturamento observado, tendência, carteira e sugestão por SKU | — |
 | GET | `/api/data-quality/channels` | Achados entre abas que afetam a leitura dos canais | — |
-| GET | `/api/capacity-plan` | Capacidade semanal finita (Etapa 15.4): ordens planejadas encaixadas por linha e semana, faltas, picos, pedidos afetados e premissas | — |
+| GET | `/api/capacity-plan` | Capacidade semanal finita (Etapa 15.4): ordens planejadas encaixadas por linha e semana, faltas, picos, pedidos afetados e premissas; desde a Etapa 16.5, semanas estimadas além do calendário e dois cenários | — |
+| GET | `/api/allocation` | Alocação sugerida do estoque escasso entre pedidos confirmados (Etapa 16.2): ordem de atendimento e motivo por pedido (`sku`, `regiao`, `cliente`) | — |
+| GET | `/api/allocation/regions` | Risco por região: unidades e valor sem cobertura na data prometida; a soma das regiões é o total descoberto | — |
+| GET | `/api/rules/coverage` | Cobertura de regras (Etapa 16.6): quantas vezes cada regra e rótulo disparou, por que zero, e a lista de pares KA para pedir sell-out | — |
 | GET | `/api/production-plan` | Produção planejada: ordens planejadas somadas por mês de liberação (agora × depois), no total e por família | — |
 | GET | `/api/capacity/{family}` | Capacidade semanal da família, com `allocated` e `remaining` das ordens planejadas | — |
-| GET | `/api/data-quality` | Validação da planilha e cobertura de sell-out | — |
-| GET | `/api/b2b2c/visibility` | Cobertura e nível demonstrativo por parceiro (V1) | — |
+| GET | `/api/data-quality` | Validação da planilha, cobertura de sell-out e avisos entre fontes (`ABC_REGISTRY_DIVERGENCE`, `SELLIN_BILLING_DIVERGENCE`, `BILLING_UNIFORM_SPLIT`) | — |
+| GET | `/api/b2b2c/visibility` | Cobertura e nível demonstrativo por parceiro, canais diretos incluídos, e a jornada até a venda ao consumidor (`journey`) | — |
 | GET | `/api/partners` | Parceiros e cobertura medida (filtros e paginação) | — |
 | GET | `/api/partners/{codigo}` | Resumo do parceiro | — |
 | GET | `/api/partners/{codigo}/skus` | Matriz parceiro–SKU com evidências mensais | — |
 | GET | `/api/commercial-recommendations` | Sugestões comerciais entre parceiros | — |
 | GET | `/api/partner-stock-projection` | Projeção de estoque no parceiro por par parceiro–SKU, com erros de sell-in e sell-out (sem tela; aguarda validação do grupo) | — |
-| GET | `/api/validation/summary` | Central de validação da Semana 4 | — |
+| GET | `/api/validation/summary` | Central de validação da Semana 4, com valor em risco endereçado (`addressed_value`) e pauta Modelo × S&OP (`sop_divergence`) | — |
 | GET | `/api/forecast-lab` | Laboratório de previsão (Etapa 14.3): motor atual × motor rolante, avaliação aninhada e grade de sensibilidade; não altera nada oficial | — |
 | GET | `/api/model-benchmark` | Cartão do modelo oficial (o que prevê, premissas, erro) e última rodada do benchmark de modelos, com histórico | — |
 | GET | `/api/runs` · `/api/runs/{id}` | Execuções registradas | — |
@@ -81,6 +84,14 @@ Estoque projetado no horizonte da previsão, agregado da projeção semanal do p
 
 `projected_stock` é `null` se a agregação falhar; os demais campos do `/api/overview` não são afetados.
 
+### `decisions_today` (Etapa 16.4)
+
+Responde "quais decisões precisam ser tomadas agora?". Lista os SKUs com `challenge_action.decide_by` até a data de planejamento + 7 dias, das datas mais próximas às mais distantes. Camada derivada: não altera ranking, score nem quantidade. Alimenta o bloco "Decisões de hoje" do Início.
+
+- `window_end` (referência + 7 dias; na base atual, 2026-09-21), `count` (26 na base atual) e `items[]` (`sku`, `product`, `label`, `lever`, `decide_by`, `reason`);
+- `decide_by` nunca fica antes da data de planejamento: prazo vencido vira a própria referência, com o motivo "prazo vencido em dd/mm: decidir hoje";
+- `lever` é a alavanca da decisão (ver "Alavancas" abaixo).
+
 ## `GET /api/forecasts`
 
 Retorna uma visão consolidada, somente leitura, com um item por SKU. A resposta combina identificação, posição e score do ranking oficial quando existentes, a previsão oficial (motor v2: 6 meses, com `forecast_total_3m`, `forecast_total_6m`, `backtest_windows` e `backtest_peak_wape`) e um resumo da recomendação operacional.
@@ -94,7 +105,16 @@ Retorna uma visão consolidada, somente leitura, com um item por SKU. A resposta
 
 Ações operacionais possíveis: `investigar_dados`, `antecipar_op`, `atraso_inevitavel`, `produzir`, `produzir_validar_capacidade`, `rever_op`, `monitorar_excesso` e `sem_acao_necessaria`. No detalhe (`/api/priorities/{sku}`), a recomendação inclui o plano datado: `planned_orders`, `op_adjustments`, `affected_orders`, `projection` (semanal), `capacity` (situação de cada ordem na linha), `earliest_arrival` e a cascata em `calculation`; o indicador inclui `reference_daily_demand`, `demand_source`, `coverage_days_registered` e `data_quality_warnings` (Etapa 15.2).
 
-O cálculo detalhado, as premissas e as evidências permanecem em `GET /api/priorities/{sku}`.
+Desde a Etapa 16, cada item de `/api/forecasts` e de `/api/priorities` traz também, de forma aditiva:
+
+- `urgency_tier` (1 a 4), `urgency_label` e `priority_reason` (frase que começa pela faixa e pelo valor, por exemplo "Pedido confirmado sem cobertura · R$ 63,9 mil em risco (KA-05, KA-02)");
+- `value_at_risk`: `observed` (quantidade sem cobertura na data prometida, depois da alocação, × preço vigente), `estimated` (falta projetada só na previsão × preço), `excess` (faixa 3: capital parado), `weighted` (`observed + estimated_weight × estimated`, usado na ordenação), `unit_price`, `nature` por componente, `missing_reason` e `observed_basis` (`alocacao` ou `pedidos_afetados`). Preço ausente deixa os valores `null`, nunca zero;
+- `abc_registry` (curva do cadastro) e `abc_measured` (curva pelo faturamento dos últimos 12 meses; 80% e 95%). A ABC não entra no ranking;
+- `challenge_action.lever`, `challenge_action.decide_by` e `challenge_action.decide_by_reason`.
+
+A ordenação oficial é faixa de urgência ↑, depois `value_at_risk.weighted` ↓, depois pontuação de sinais (`attention_score`) ↓, depois SKU; na faixa 3, o desempate usa `value_at_risk.excess` ↓ antes dos sinais. Regras em [prioritization.md](prioritization.md).
+
+O cálculo detalhado, as premissas e as evidências permanecem em `GET /api/priorities/{sku}`, que além disso traz o bloco `allocation` (a entrada de `/api/allocation` para o SKU, ou `null` sem pedido aberto).
 
 ## `GET /api/revenue-forecast`
 
@@ -148,6 +168,22 @@ Campo opcional e aditivo, derivado das ações e dos sinais já calculados; não
 - Limiares em `config/challenge_actions.json`. Regras e precedência em [Etapa 13](historico.md).
 - `POST /api/feedback` aceita `challenge_action` opcional (validado); `GET /api/feedback` o devolve (`null` em decisões anteriores). Exige a migração `003_challenge_action.sql` no Supabase para ser gravado; sem ela, a decisão é registrada sem o rótulo.
 
+### Alavancas (`lever`) e prazo (`decide_by`)
+
+Desde a Etapa 16.4, o rótulo operacional sai de uma tabela de decisão por alavanca ("o que o usuário pode fazer agora?"), avaliada na ordem, e a primeira linha que casa vence. Detalhe em [calculations.md](calculations.md#34-rótulos-de-ação-do-desafio-action_labelspy).
+
+| `lever` | Quando | Rótulo |
+|---|---|---|
+| `alocar` | pedido sem cobertura disputado por 2 ou mais clientes | Priorizar parceiro |
+| `antecipar_op` | OP não iniciada que pode chegar antes da falta | Priorizar produção |
+| `produzir_agora` | pedido sem cobertura com ordem urgente de quantidade > 0; produzir urgente na faixa 1 ou com decisão de evento na janela; falta só na previsão com ordem urgente | Priorizar produção ou Produzir |
+| `renegociar` | pedido sem cobertura e sem alavanca de produção (quantidade 0 ou descontinuação) | Monitorar |
+| `rever_op` | OP a reduzir ou cancelar | Investigar |
+| `produzir_futuro` | necessidade líquida no horizonte; só é Produzir se a próxima liberação cair na janela de decisão (4 semanas); depois dela, Monitorar | Produzir ou Monitorar |
+| `nenhuma` | dado insuficiente, excesso, falta estimada sem ordem urgente, sem ação | Investigar, Monitorar ou Sem ação necessária |
+
+`decide_by` é a data de liberação da ordem urgente, a data prometida do pedido, o fim da janela de decisão ou a data do evento, nunca anterior à data de planejamento. Itens sem decisão têm `lever = "nenhuma"` e `decide_by = null`.
+
 ## `GET /api/b2b2c/visibility`
 
 Cada parceiro recebe uma classificação demonstrativa derivada da cobertura de SKUs com sell-out observado:
@@ -158,6 +194,20 @@ Cada parceiro recebe uma classificação demonstrativa derivada da cobertura de 
 - `Estratégico`: 80% ou mais.
 
 A resposta também informa `next_level`, a quantidade adicional de SKUs necessária e uma descrição do dado requerido. Essa classificação não representa acordo comercial firmado.
+
+Desde a Etapa 16.1:
+
+- os canais diretos (E-commerce, Marketplace, Loja própria) também são listados, com `visibility_source = "faturamento_direto"` (a venda ao consumidor é o faturamento, observada) e cobertura de 100%; os parceiros KA têm `visibility_source = "sell_out_parceiro"` e cobertura de 20%. O mesmo campo aparece em `/api/partners`;
+- `journey` responde "até onde vemos o consumidor", nos 12 meses da janela (`window_months`): `total_units`, `by_channel_type[]` (`type`, `billed_units`, `observed_consumer_units`, `observed_consumer_units_raw`, `without_visibility_units`, `share_observed`, `exceeds_billing`, `visibility_source`), `observed_consumer_units`, `without_visibility_units`, `observed_share`, `nature` e `note`. O sell-out de um par é limitado ao faturado do par (`exceeds_billing` avisa quando o sell-out informado passa do faturado). Na base atual, 328.111 un. faturadas, 75,1% com venda ao consumidor observada (venda direta 100%, varejista 22,5%, distribuidor 19,8%);
+- ausência de sell-out não é venda zero ao consumidor: o restante aparece como "sem visibilidade", calculado.
+
+### Linhas comerciais (`/api/commercial-recommendations`, `/api/partners/{codigo}/skus`)
+
+Campos aditivos da Etapa 16:
+
+- `row_kind` (`partner` ou `direct`), `visibility_source` e `stock_reason`. As 22 linhas de canal direto têm `action = "canal_direto"`, `data_quality = "sufficient"`, `data_nature = "Observado (faturamento direto)"`, `estimated_stock = null` e `stock_reason = "Sem estoque intermediário: o estoque que atende o canal é o do CD"`. Não são dado insuficiente;
+- `forward_projection` (linhas de parceiro com sell-out suficiente): `days_until_stockout_without_replenishment`, `replenishment_to_target` (quantidade para fechar o próximo mês com 30 dias), `sell_out_wape`, `status`, `reason` e `nature = "estimado"`, mais `forward_projection_reason` quando ausente. As 11 linhas "Repor" da base trazem três evidências (dias até acabar, quantidade para 30 dias, WAPE de 26%). Vem de `partner_stock_projection.py`;
+- as 23 linhas KA com carteira e sem sell-out suficiente continuam `dados_insuficientes` e saem como Investigar com o sinal `SELL_OUT_REQUEST` em `challenge_action.signals_used`: "pedir ao parceiro o sell-out deste SKU antes de decidir".
 
 ## `GET /api/feedback` e `POST /api/feedback`
 
@@ -227,6 +277,59 @@ Leitura aditiva para a aba Confiança › Modelo de previsão (`/modelo`). Não 
 - `items[]` por par: `current_stock`, `forecast_monthly_sell_out`, `coverage_days_now`, `replenishment_to_target`, `months` e `scenarios` (`with_replenishment` e `without_replenishment`, cada um com `monthly_sell_in`, `projected_stock[]`, `stockout_month` e `coverage_days_end`). Par com mês faltante na janela: `status = "insufficient_data"`, valores nulos e `reason`.
 - `method` (fórmulas e configuração), `pairs`, `pairs_with_projection`, `total`, `limitations`, `nature = "estimado"` e `requires_human_review = true`.
 
+## Etapa 16.2 — `GET /api/allocation` e `GET /api/allocation/regions`
+
+Alocação **sugerida** do estoque do CD, das OPs abertas e das ordens planejadas entre os **pedidos confirmados** da carteira (exceção D1 em [decisions.md](decisions.md)). Nada é reservado, e a previsão nunca é alocada. Pesos e limites em `config/allocation.json`.
+
+`GET /api/allocation` aceita `sku`, `regiao` e `cliente` (404 para SKU sem pedido aberto; 422 para região ou cliente inexistentes) e devolve só os SKUs com falta ou disputados:
+
+- `reference_date`, `total` (17 SKUs na base atual) e `items[]`;
+- cada item: `sku`, `has_shortfall`, `contested` (2 ou mais clientes), `clients`, `unit_price`, `orders[]`, `uncovered_units_at_promise`, `uncovered_value_at_promise`, `decision_text` ("KA-02 recebe 303 un. agora e o restante em 05/10 com a ordem planejada; ..."), `first_client`, `last_client`, `orders_with_partner_data`, `data_note` e `orders_without_date`;
+- cada pedido: `order`, `client`, `client_type`, `region`, `quantity`, `promised_date`, `rank`, `allocation_score`, `score_components[]` (`component`, `points`, `value`, `nature`, `reason`), `allocated_now`, `uncovered_at_promise`, `allocated_later[]` (`quantity`, `expected_date`, `source_ref`, `source`), `expected_date`, `delay_days`, `fifo_delay_days` (atraso se fosse atendido só pela data prometida) e `reason`;
+- `totals`: `uncovered_units` (6.626), `uncovered_value` (R$ 401.632,40), `orders` (21), `skus` (17), `contested_skus` (CI-0004, CI-0005, CI-0027, CI-0041, CI-0049) e `shortfall_skus`;
+- `field_nature`, `limitations` (inclui "Alocação sugerida; não reserva estoque nem altera pedidos.") e `requires_human_review = true`.
+
+Pontuação: urgência (peso 3, observada), canal direto (2, cadastral), cobertura baixa no parceiro (2, estimada), estoque acumulando ou cobertura alta no parceiro (−3, estimada) e pedido pequeno (1, observada). Parceiro sem sell-out suficiente não recebe ponto de cobertura ("sem dado do parceiro"); o faturamento por cliente não é usado como peso. Empate: data prometida, depois código do pedido. Valor sem preço fica `null` com `missing_price_reason`.
+
+`GET /api/allocation/regions` devolve `regions[]` (`region`, `uncovered_units`, `uncovered_value`, `orders`, `skus`), `totals`, `limitations` e `requires_human_review`. A soma das regiões é o total descoberto: Nacional (canais diretos), Centro-Oeste, Nordeste, Sul e Sudeste.
+
+## Etapa 16.6 — `GET /api/rules/coverage`
+
+Responde "por que esta regra nunca disparou?". Somente leitura, sobre as saídas atuais e a planilha.
+
+- `rules[]` (21 na base atual: regras operacionais e rótulos do desafio): `rule`, `kind` (`operational` ou `label`), `label`, `condition` (linguagem simples), `weight`, `fires`, `fires_by_level` (sku, commercial, partner, channel), e, quando `fires = 0`, `zero_reason` (com o número que o comprova), `evidence_number`, `data_needed` e `reference_case` (caso congelado, `origin` sintético);
+- zeros da base atual: `ampliar_mix` (24 de 24 meses de faturamento em 150 de 150 pares canal × SKU; VC-14), `recomendar_recompra` (Sell_In contínuo em 50 de 50 pares; VC-15) e `reativar` (nenhum par parado; VC-16);
+- `sell_out_requests[]` (23 pares KA × SKU com pedido em carteira e sem sell-out, do maior valor ao menor): `partner`, `sku`, `product`, `backlog_quantity`, `backlog_value`, `orders`. O primeiro é KA-02 · CI-0014 (R$ 112.662,30);
+- `precedence[]` (`level`, `position`, `line`, `code`, `code_fires`), `field_nature`, `limitations` e `requires_human_review = true`.
+
+## Etapa 16.5 — Capacidade estimada em `GET /api/capacity-plan`
+
+Contrato aditivo; `config/capacity_extension.json` com `enabled: false` reproduz a saída anterior.
+
+- `families[].weeks[]` ganha `nature` (`observada` ou `estimada`) e `method` (`media_compromissos_8_semanas` nas estimadas, `null` nas observadas). As semanas estimadas vão de `estimated_from` (04/01/2027) até o fim do horizonte;
+- `families[]` ganha `estimated_from`, `planned_in_estimated` (unidades encaixadas nas semanas estimadas) e `scenarios`: `central` (capacidade máxima − média dos compromissos base das últimas 8 semanas observadas) e `conservador` (menor capacidade disponível observada), cada um com `peak_status` e `unscheduled_quantity`;
+- novos status, em `families[].status`, `peak_status` e `skus[].status`: `ok_estimado` ("Cabe na capacidade estimada") e `insuficiente_estimado` ("Não cabe nem na capacidade estimada"). `a_confirmar` só sobra com o método desligado (0 SKUs com ele ligado, contra 37 antes);
+- `insuficiente_estimado` **não** gera `CAPACITY_SHORTFALL` nem altera o score. Linha Escolar: o pico segue `insuficiente` (falta observada em dez/26), com 12.970 un. sem programação no cenário central e 13.600 no conservador;
+- `assumptions` explica que a capacidade estimada não é capacidade informada pela empresa.
+
+## Etapa 16.7 — Impacto e IA em `GET /api/validation/summary`
+
+Campos aditivos:
+
+- `addressed_value`: `observed_total` (soma de `value_at_risk.observed` dos SKUs com decisão registrada), `sku_count`, `decided_skus`, `skus_without_value`, `nature = "observado"`, `note` e `missing_reason`. Sem decisões registradas ou com a persistência indisponível, `observed_total` é `null` com `missing_reason` (nunca R$ 0). Não é dinheiro recuperado;
+- `sop_divergence`: `months` (out a dez/26), `threshold` (0,2), `count` (52 divergências em 32 SKUs na base atual) e `items[]` (`sku`, `month`, `model`, `sop`, `ratio`) em ordem decrescente de distância. É pauta de revisão: o erro do S&OP não é mensurável porque a base só traz meses futuros, e nenhum dos lados é tratado como o certo;
+- `analysis_time` continua com `comparison_allowed = false` abaixo de 20 registros. O tempo é preenchido automaticamente no frontend (do abrir o SKU ao registrar a decisão) e é editável; `POST /api/feedback` já aceitava `analysis_minutes`.
+
+## Etapa 16 — Avisos em `GET /api/data-quality`
+
+Três avisos novos em `warnings[]`, sempre com `code`, `sheet`, `count` e `message`:
+
+- `ABC_REGISTRY_DIVERGENCE`: SKUs cuja curva do cadastro difere da medida pelo faturamento de 12 meses (37 de 50). Itens: `sku`, `registry`, `measured`, `revenue_12m`;
+- `SELLIN_BILLING_DIVERGENCE`: parceiros com sell-in maior que o faturado, acima da razão `limit` de 1,25 (5 KAs; KA-05: 13.071 sell-in × 1.900 faturado, 6,88). Itens: `partner`, `sell_in_units`, `billed_units`, `ratio`. Texto: as duas fontes não fecham; o sistema usa Sell_In e Sell_Out para o parceiro e Vendas_24m para o total do SKU;
+- `BILLING_UNIFORM_SPLIT`: a participação de cada cliente no SKU fica entre `min_ratio` 0,92 e `max_ratio` 1,03 da mediana (400 pares cliente × SKU na banda de 0,1). O faturamento por cliente é quase proporcional e não é usado para padrões por parceiro.
+
+Os avisos não alteram o ranking; aparecem em Dados da planilha e no mapa da jornada.
+
 ## Etapa 5 — `GET /api/validation/summary`
 
 Leitura aditiva e somente leitura para a Central de validação (`/validacao`). Reutiliza o pipeline cacheado, a previsão e a recomendação existentes; não altera pesos, limiares, modelos, ranking nem arquivos. Configuração: `config/validation_center.json`.
@@ -262,6 +365,8 @@ Compara dois snapshots gravados, sem recalcular nada. A rota é separada de `/ap
 - `comparable`, `notes`, `limitations`.
 
 Seção sem dados compatíveis retorna `{"available": false, "reason": "..."}`. Isso ocorre com snapshot anterior à Etapa 6, versão de snapshot diferente, ranking sem os campos necessários ou análise comercial indisponível no registro. Base igual ao alvo ou id menor que 1 retorna 422; execução inexistente retorna 404.
+
+Desde a Etapa 16.3, cada SKU comparado traz `ranking_basis` (`faixa_e_valor`, `sinais` para execuções antigas sem faixa, ou `misto` quando só uma das duas tem faixa), `position_driver` (`faixa`, `valor`, `sinais`, `outros_skus` ou `criterio`), `tier_change` e `value_change` (valor ponderado, com os deltas observado e estimado) e uma frase de explicação; o resumo traz `by_driver`. A mudança de posição passa a ser explicada pela faixa de urgência ou pelo valor em risco, não só pelo score. Execuções antigas continuam comparáveis.
 
 ## Etapa 8 — Segurança e modo de demonstração
 

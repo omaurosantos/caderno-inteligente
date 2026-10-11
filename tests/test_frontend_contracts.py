@@ -79,6 +79,7 @@ def responses(tmp_path_factory):
         "partners": "/api/partners", "partnerDetail": f"/api/partners/{PARTNER}", "partnerSkus": f"/api/partners/{PARTNER}/skus?limit=50",
         "commercial": "/api/commercial-recommendations?limit=50", "validation": "/api/validation/summary", "forecastLab": "/api/forecast-lab", "modelBenchmark": "/api/model-benchmark",
         "runComparison": f"/api/run-comparisons?base={legacy}&target={current}", "system": "/api/system",
+        "allocation": "/api/allocation", "allocationRegions": "/api/allocation/regions", "rulesCoverage": "/api/rules/coverage",
     }
     result = {}
     for name, path in paths.items():

@@ -11,7 +11,10 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from caderno_inteligente.action_labels import DEFAULT_SETTINGS as CHALLENGE_DEFAULTS, label_channel_row, label_commercial_row, label_operational, label_partner
+from caderno_inteligente.action_labels import (
+    DEFAULT_SETTINGS as CHALLENGE_DEFAULTS, build_lever_context, label_channel_row, label_commercial_row, label_operational, label_partner,
+)
+from caderno_inteligente.allocation import DIRECT_CHANNEL_TYPE, build_allocation, load_allocation_settings
 from caderno_inteligente.forecast_candidates import CANDIDATE_LABELS
 from caderno_inteligente.forecast_engine_config import load_engine_config
 from caderno_inteligente.forecasting import MODEL_LABELS, _MODELS, _monthly_series, _wape
@@ -378,10 +381,35 @@ def _indicator_frame(values: dict[str, Any]) -> pd.DataFrame:
     return frame
 
 
+def _outranks_higher_value_active(ranked_row: dict[str, Any] | None, ranking: pd.DataFrame | None, plans: dict[str, dict[str, Any]] | None) -> bool | None:
+    """Etapa 16.3: o SKU fica à frente de um SKU ativo da mesma faixa com valor observado maior? None sem faixa ou valor."""
+    if ranked_row is None or ranking is None or "urgency_tier" not in ranking or ranked_row.get("urgency_tier") is None:
+        return None
+    observed = (ranked_row.get("value_at_risk") or {}).get("observed")
+    if observed is None:
+        return None
+    for row in ranking.to_dict("records"):
+        other = (row.get("value_at_risk") or {}).get("observed")
+        active = not (plans or {}).get(row["sku"], {}).get("discontinued")
+        if (row["urgency_tier"] == ranked_row["urgency_tier"] and row["priority"] > ranked_row["priority"] and active
+                and other is not None and other > observed):
+            return True
+    return False
+
+
 def _operational_output(indicator: dict[str, Any], forecast: dict[str, Any], codes: list[str], priority: int | None,
-                        plan: dict[str, Any] | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+                        plan: dict[str, Any] | None = None, settings: dict[str, Any] | None = None,
+                        ranked_row: dict[str, Any] | None = None, allocation_sku: dict[str, Any] | None = None,
+                        ranking: pd.DataFrame | None = None, plans: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Com plano (casos da base), o rótulo usa a mesma tabela de alavancas da API: contexto do plano, da alocação e da faixa da linha do ranking."""
     recommendation = build_operational_recommendation(indicator, forecast, codes, plan)
-    challenge = label_operational(recommendation["action"], priority, forecast.get("status"), None, recommendation["capacity_status"], None, settings or CHALLENGE_DEFAULTS)
+    context = None
+    if plan is not None:
+        tier = None if ranked_row is None or ranked_row.get("urgency_tier") is None else {"tier": int(ranked_row["urgency_tier"])}
+        context = build_lever_context(plan, allocation_sku, tier, (plan.get("capacity") or {}).get("status"), plan.get("reference_date"))
+    challenge = label_operational(recommendation["action"], priority, forecast.get("status"), None, recommendation["capacity_status"], None,
+                                  settings or CHALLENGE_DEFAULTS, context=context)
+    risk = (ranked_row or {}).get("value_at_risk") or {}
     return {
         "signals": sorted(codes),
         "ranked": priority is not None,
@@ -399,6 +427,11 @@ def _operational_output(indicator: dict[str, Any], forecast: dict[str, Any], cod
         "affected_order_ids": [item["order"] for item in recommendation.get("affected_orders") or []],
         "op_adjusted_orders": [item["order"] for item in recommendation.get("op_adjustments") or [] if item["adjustment"] in ("reduzir", "cancelar")],
         "op_anticipated_orders": [item["order"] for item in recommendation.get("op_adjustments") or [] if item["adjustment"] == "antecipar"],
+        "urgency_tier": None if context is None else context["urgency_tier"],
+        "value_at_risk_estimated": risk.get("estimated"),
+        "outranks_higher_value_active": _outranks_higher_value_active(ranked_row, ranking, plans),
+        "lever": challenge["lever"],
+        "decide_by": challenge["decide_by"],
     }
 
 
@@ -408,7 +441,8 @@ def _challenge_output(case_input: dict[str, Any], settings: dict[str, Any]) -> d
     if level == "operational":
         reference = case_input.get("reference_date")
         label = label_operational(case_input["action"], case_input.get("priority"), case_input.get("forecast_status", "ok"), case_input.get("event_alerts"),
-                                  case_input.get("capacity_status"), None if reference is None else date.fromisoformat(reference), settings)
+                                  case_input.get("capacity_status"), None if reference is None else date.fromisoformat(reference), settings,
+                                  context=case_input.get("context"))
     elif level == "commercial":
         label = label_commercial_row(case_input["row"], settings)
     elif level == "partner":
@@ -459,9 +493,61 @@ _COMMERCIAL_INPUT = (
 )
 
 
+def _allocation_output(sku_entry: dict[str, Any], allocation: dict[str, Any], source: str) -> dict[str, Any]:
+    orders = sku_entry["orders"]
+    return {"contested": sku_entry["contested"], "ranked_clients": [row["client"] for row in orders],
+            "orders_with_reason": sum(1 for row in orders if row.get("reason")), "first_client": sku_entry["first_client"],
+            "last_client": sku_entry["last_client"], "decision_text": sku_entry["decision_text"],
+            "requires_human_review": allocation["requires_human_review"], "allocation_source": source}
+
+
+def _base_allocation(sku: str, plans: dict[str, dict[str, Any]] | None, partner_items: list[dict],
+                     allocation: dict[str, Any] | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str]:
+    """Alocação do SKU: a do pipeline quando informada; sem ela, o mesmo `build_allocation` sobre o plano e os pares parceiro–SKU.
+
+    No recálculo o cadastro vem dos próprios pares: o canal direto é reconhecido (`row_kind`) e os demais ficam sem tipo, o que não
+    muda a pontuação (só o canal direto pontua pelo tipo)."""
+    if allocation is not None:
+        return allocation["skus"].get(sku), allocation, "pipeline"
+    plan = (plans or {}).get(sku)
+    if plan is None:
+        return None, None, "indisponivel"
+    registry = {item["partner"]: {"Código": item["partner"], "Tipo": DIRECT_CHANNEL_TYPE if item.get("row_kind") == "direct" else None, "Região": item.get("region")}
+                for item in partner_items}
+    rebuilt = build_allocation({sku: plan}, pd.DataFrame(list(registry.values()), columns=["Código", "Tipo", "Região"]), partner_items, {},
+                               load_allocation_settings(), plan["reference_date"])
+    return rebuilt["skus"].get(sku), rebuilt, "recalculada sobre o plano e os pares parceiro–SKU"
+
+
+def _synthetic_allocation(case_input: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Roda `build_allocation` (pontuação + `allocate_sku`) sobre uma entrada congelada: oferta única na referência e os pedidos."""
+    sku, reference = case_input["sku"], case_input["reference_date"]
+    orders = [{"order": item.get("order") or f"{sku}-{index}", "client": item["client"], "quantity": float(item["quantity"]), "promised_date": item["promised_date"]}
+              for index, item in enumerate(case_input["orders"], start=1)]
+    plan = {"sku": sku, "reference_date": reference, "open_orders": orders,
+            "supply_events": [{"date": reference, "quantity": float(case_input["supply_units"]), "source": "estoque", "ref": None}]}
+    coverage = case_input.get("partner_coverage_days") or {}
+    pairs = [{"partner": client, "sku": sku, "data_quality": "sufficient" if coverage.get(client) is not None else "insufficient",
+              "coverage_days": coverage.get(client), "signals": [{"code": code} for code in codes]}
+             for client, codes in (case_input.get("partner_signals") or {}).items()]
+    registry = pd.DataFrame([{"Código": item["client"], "Tipo": None, "Região": None} for item in orders], columns=["Código", "Tipo", "Região"])
+    allocation = build_allocation({sku: plan}, registry, pairs, {}, load_allocation_settings(), reference)
+    return allocation["skus"].get(sku), allocation
+
+
+def _commercial_label(item: dict[str, Any], settings: dict[str, Any], channel_rows: dict[str, list[dict[str, Any]]] | None) -> dict[str, Any]:
+    """Mesmo rótulo da API: canal direto usa a sugestão de canais diretos para o canal e SKU (Etapa 16.1); sem ela, o ramo canal_direto."""
+    if item.get("row_kind") == "direct":
+        match = next((row for row in (channel_rows or {}).get(item["partner"], []) if row["sku"] == item["sku"]), None)
+        if match is not None:
+            return label_channel_row(match)
+    return label_commercial_row(item, settings)
+
+
 def _evaluate_case(case: dict, indicators: pd.DataFrame, issues: pd.DataFrame, ranking: pd.DataFrame,
                    forecasts: pd.DataFrame, partner_items: list[dict], thresholds: dict, challenge_settings: dict[str, Any],
-                   plans: dict[str, dict[str, Any]] | None = None, capacity: dict[str, Any] | None = None) -> dict[str, Any]:
+                   plans: dict[str, dict[str, Any]] | None = None, capacity: dict[str, Any] | None = None,
+                   channel_rows: dict[str, list[dict[str, Any]]] | None = None, allocation: dict[str, Any] | None = None) -> dict[str, Any]:
     result = {key: case.get(key) for key in ("id", "title", "kind", "origin", "origin_reason", "sku", "partner", "family", "limitation", "pending_until")}
     if case.get("pending_until"):
         # Caso gravado antes do código que o atende (protocolo da Etapa 15): fica visível, mas só é executado quando a
@@ -482,11 +568,22 @@ def _evaluate_case(case: dict, indicators: pd.DataFrame, issues: pd.DataFrame, r
                 "estimated_stock": item["estimated_stock"],
                 "coverage_days": item["coverage_days"],
                 "requires_human_review": item["requires_human_review"],
-                "challenge_code": label_commercial_row(item, challenge_settings)["code"],
+                "challenge_code": _commercial_label(item, challenge_settings, channel_rows)["code"],
             }
     elif case["kind"] == "challenge_action":
         case_input = case["input"]
         obtained = _challenge_output(case_input, challenge_settings)
+    elif case["kind"] == "allocation":
+        if case["origin"] == "synthetic":
+            case_input = case["input"]
+            entry, result_allocation = _synthetic_allocation(case_input)
+            if entry is not None:
+                obtained = _allocation_output(entry, result_allocation, "sintética")
+        else:
+            entry, result_allocation, source = _base_allocation(case["sku"], plans, partner_items, allocation)
+            if entry is not None:
+                case_input = {"sku": case["sku"], "orders": [{key: row.get(key) for key in ("order", "client", "quantity", "promised_date")} for row in entry["orders"]]}
+                obtained = _allocation_output(entry, result_allocation, source)
     elif case["kind"] == "capacity_family":
         family = next((item for item in (capacity or {}).get("families", []) if item["family"] == case.get("family")), None)
         if family is not None:
@@ -517,7 +614,10 @@ def _evaluate_case(case: dict, indicators: pd.DataFrame, issues: pd.DataFrame, r
             ranked = ranking[ranking.sku == case["sku"]]
             priority = None if ranked.empty else int(ranked["priority"].iloc[0])
             case_input = {**{key: indicator.get(key) for key in _OPERATIONAL_INPUT}, "forecast_status": forecast.get("status"), "forecast_next_month": forecast.get("forecast_next_month")}
-            obtained = _operational_output(indicator, forecast, codes, priority, (plans or {}).get(case["sku"]), challenge_settings)
+            plan = (plans or {}).get(case["sku"])
+            allocation_sku = None if plan is None else _base_allocation(case["sku"], plans, partner_items, allocation)[0]
+            obtained = _operational_output(indicator, forecast, codes, priority, plan, challenge_settings,
+                                           None if ranked.empty else ranked.iloc[0].to_dict(), allocation_sku, ranking, plans)
 
     if obtained is None:
         return {**result, "input": None, "expected": case["expected"], "obtained": None, "checks": [], "result": "nao_encontrado",
@@ -537,10 +637,15 @@ def _evaluate_case(case: dict, indicators: pd.DataFrame, issues: pd.DataFrame, r
 def evaluate_frozen_cases(config: dict[str, Any], *, indicators: pd.DataFrame, issues: pd.DataFrame, ranking: pd.DataFrame,
                           forecasts: pd.DataFrame, partner_items: list[dict], thresholds: dict, source_sha256: str,
                           challenge_settings: dict[str, Any] | None = None, plans: dict[str, dict[str, Any]] | None = None,
-                          capacity: dict[str, Any] | None = None) -> dict[str, Any]:
-    """`plans` (Etapa 15.3): plano datado por SKU; os casos da base usam a mesma recomendação do produto."""
+                          capacity: dict[str, Any] | None = None, channel_rows: dict[str, list[dict[str, Any]]] | None = None,
+                          allocation: dict[str, Any] | None = None) -> dict[str, Any]:
+    """`plans` (Etapa 15.3): plano datado por SKU; os casos da base usam a mesma recomendação do produto.
+
+    `channel_rows` (Etapa 16.1): linhas de `build_direct_channels(...)["rows"]`, para rotular o canal direto como a API.
+    `allocation` (Etapa 16.2): saída de `build_allocation` do pipeline; sem ela, a alocação do SKU é recalculada pelo mesmo núcleo."""
     settings = challenge_settings or CHALLENGE_DEFAULTS
-    items = [_evaluate_case(case, indicators, issues, ranking, forecasts, partner_items, thresholds, settings, plans, capacity) for case in config["cases"]]
+    items = [_evaluate_case(case, indicators, issues, ranking, forecasts, partner_items, thresholds, settings, plans, capacity, channel_rows, allocation)
+             for case in config["cases"]]
     counts = {key: sum(item["result"] == key for item in items) for key in ("passou", "falhou", "nao_encontrado", "pendente")}
     matches = source_sha256 == config["frozen_source_sha256"]
     return {

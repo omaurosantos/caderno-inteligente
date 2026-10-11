@@ -25,12 +25,17 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 |---|---|
 | `ingestion.py`, `validation.py`, `transformations.py` | Leitura das abas com cabeçalho na linha 3, validação sem correção silenciosa e normalização em cópias internas |
 | `indicators.py` | Uma linha por SKU: cobertura, carteira, produção aberta, datas, sell-in/out, capacidade familiar ([cálculos](calculations.md)) |
-| `rules.py`, `prioritization.py` | Sete regras determinísticas e soma transparente de pesos ([regras](rules.md), [priorização](prioritization.md)) |
+| `rules.py`, `prioritization.py` | Regras determinísticas e pontuação transparente de pesos; a ordem da fila é faixa de urgência, valor em risco e só então a pontuação ([regras](rules.md), [priorização](prioritization.md)) |
 | `forecasting.py`, `recommendations.py` | Previsão mensal (média móvel 3m × sazonal 12m, holdout de 3 meses) e ação/quantidade sugerida por SKU ([Semana 3](semana-3-modelo-preditivo.md)) |
 | `partner_insights.py` | Pares parceiro–SKU reais, sinais e ações comerciais ([regras comerciais](commercial-rules.md)) |
 | `validation_center.py` | Linha de base, baseline de previsão, casos congelados e comportamento seguro ([Semana 4](semana-4-validacao-v2.md)) |
 | `run_comparison.py`, `runs.py` | Snapshot versionado e comparação entre execuções |
-| `partner_stock_projection.py` | Projeção de estoque no parceiro com erros de sell-in e sell-out; só API, sem tela |
+| `partner_stock_projection.py` | Projeção de estoque no parceiro com erros de sell-in e sell-out; desde a Etapa 16.6 também alimenta as linhas "Repor" como evidência para frente |
+| `allocation.py` | Etapa 16.2: alocação sugerida do estoque escasso entre pedidos confirmados, com pontuação por pedido e resumo por região (exceção D1 em [decisões](decisions.md)); pesos em `config/allocation.json` |
+| `impact.py` | Etapa 16.3: faixa de urgência, valor em risco (observado, estimado, excesso) e curva ABC medida; parâmetros em `config/prioritization_impact.json` |
+| `visibility.py` | Etapa 16.1: jornada do faturado até a venda ao consumidor observada |
+| `rules_coverage.py` | Etapa 16.6: disparos por regra, motivo dos zeros e lista de pares KA para pedir sell-out |
+| `impact_metrics.py` | Etapa 16.7: valor em risco endereçado e divergência modelo × S&OP |
 | `model_card.py` | Cartão do modelo oficial: o que prevê, premissas, erro e limitações |
 | `model_benchmark.py`, `benchmark_store.py` | Benchmark de modelos (statsforecast, scikit-learn, LightGBM, Prophet) contra o oficial e histórico das rodadas em SQLite local; fora do pipeline oficial |
 | `persistence.py`, `postgres_persistence.py`, `feedback.py`, `cases.py` | Mesmo contrato em SQLite e PostgreSQL |
@@ -38,14 +43,16 @@ O protótipo apoia o PCP com sinais auditáveis. Nenhum componente libera produ�
 
 ## Backend (`backend/`)
 
-- `main.py` monta o pipeline e o mantém em **cache em memória**. O cache é protegido contra reconstruções concorrentes e invalidado quando mudam a data ou o tamanho do XLSM, dos pesos ou dos limiares. Com `DATA_SOURCE=banco`, o XLSM dá lugar à versão dos dados no banco.
+- `main.py` monta o pipeline e o mantém em **cache em memória**. O cache é protegido contra reconstruções concorrentes e invalidado quando mudam a data ou o tamanho do XLSM, dos pesos ou dos limiares (inclusive `allocation.json`, `prioritization_impact.json` e `capacity_extension.json`). Desde a Etapa 16, o pipeline calcula a alocação e o impacto antes dos rótulos, e as linhas do ranking carregam `urgency_tier` e `value_at_risk`. Com `DATA_SOURCE=banco`, o XLSM dá lugar à versão dos dados no banco.
 - Routers aditivos:
   - `partners.py`: visão comercial;
   - `validation.py`: Central de validação;
   - `run_comparisons.py`: comparação de execuções;
   - `registry.py`: login e cadastro de SKU (fase 3);
   - `model_benchmark.py`: cartão do modelo e rodadas do benchmark;
-  - `partner_stock_projection.py`: projeção de estoque no parceiro (sem tela).
+  - `partner_stock_projection.py`: projeção de estoque no parceiro (detalhe em API; o resumo entra nas linhas "Repor");
+  - `allocation.py`: `/api/allocation` e `/api/allocation/regions`;
+  - `rules_coverage.py`: `/api/rules/coverage`.
 - `security.py` reúne:
   - ambiente (`APP_ENV`);
   - modo demonstração (`DEMO_MODE`);
@@ -85,24 +92,24 @@ O menu agrupa as rotas em 8 entradas: Início; Planejamento (`/fila`, `/capacida
 | URL | Página | Dados consultados |
 |---|---|---|
 | `/guia` | Guia de uso | Nenhum (funciona com a API fora do ar) |
-| `/` | Início — o primeiro SKU da fila no topo e, abaixo, o painel: indicadores de ruptura, 5 SKUs com risco de ruptura, 5 oportunidades de reposição e o gráfico de faturamento. Oportunidades e faturamento carregam e falham cada um por si | `overview`, `priorities`, `config`, `events`, `commercial-recommendations?action=avaliar_reposicao`, `revenue-forecast` |
+| `/` | Início — o primeiro SKU da fila no topo, o bloco "Decisões de hoje" (`overview.decisions_today`) e, abaixo, o painel: indicadores de ruptura, 5 SKUs com risco de ruptura, 5 oportunidades de reposição e o gráfico de faturamento. Oportunidades e faturamento carregam e falham cada um por si | `overview`, `priorities`, `config`, `events`, `commercial-recommendations?action=avaliar_reposicao`, `revenue-forecast` |
 | `/fila` | Fila operacional — filtros `busca`, `familia`, `acao`, `rotulo`, `confianca`, `sinal` (`ruptura`), `ordem`, `todos` na URL; junta posição e ação pelo SKU no cliente; gráfico de produção planejada por mês, que segue o filtro de família | `priorities`, `forecasts`, `config`, `events`, `production-plan` |
 | `/faturamento` | Faturamento previsto — filtros `busca`, `familia` no topo (a família também restringe o resumo); SKUs paginados de 10 em 10 | `revenue-forecast` |
 | `/skus` | Lista de SKUs — filtros `busca`, `familia`; paginada de 10 em 10; cada linha abre `/skus/:sku` | `forecasts` |
 | `/prioridades`, `/previsoes` | Redirecionam para `/fila` (mesmos parâmetros) | Nenhum |
-| `/skus/:sku` | Detalhe do SKU (compartilhável), abas em `?tab=`; o contexto comercial só carrega na aba Parceiros | `priorities/{sku}`, `commercial-recommendations?sku=` (aba Parceiros) |
+| `/skus/:sku` | Detalhe do SKU (compartilhável), abas em `?tab=`; o resumo traz "Quem atender primeiro" (alocação); o tempo de análise é medido do abrir ao registrar a decisão; o contexto comercial só carrega na aba Parceiros | `priorities/{sku}`, `commercial-recommendations?sku=` (aba Parceiros) |
 | `/casos` | Casos — edição por linha (`PUT cases/{id}`), filtros `status`, `responsavel` | `cases`, `priorities`, `config` |
-| `/qualidade` | Dados da planilha | `data-quality` |
-| `/parceiros` | Comercial › Oportunidades — filtros `busca`, `regiao`, `canal`, `ordem` | `partners`, `commercial-recommendations?action=avaliar_reposicao` |
-| `/carteira` | Comercial › Parceiros — filtros `busca`, `regiao`, `canal`, `rotulo`, `ordem` | `partners` |
+| `/qualidade` | Dados da planilha, com os avisos de ABC do cadastro, sell-in × faturado e rateio uniforme | `data-quality` |
+| `/parceiros` | Comercial › Oportunidades — filtros `busca`, `regiao`, `canal`, `ordem`; inclui "Risco por região: pedidos sem cobertura" | `partners`, `commercial-recommendations?action=avaliar_reposicao`, `allocation/regions` |
+| `/carteira` | Comercial › Parceiros — filtros `busca`, `regiao`, `canal`, `rotulo`, `ordem`; mostra a fonte de visibilidade (sell-out do parceiro × venda direta) e "Quanto da venda ao consumidor é observado" | `partners`, `b2b2c/visibility` |
 | `/canais` | Comercial › Canais diretos | `direct-channels` |
 | `/parceiros/:codigo` | Detalhe do parceiro — filtros `sku`, `acao`, `qualidade`, `offset` | `partners/{codigo}`, `partners/{codigo}/skus` |
 | `/cenarios` | Simulação de cenários | `config`, `POST scenarios` |
 | `/execucoes` | Execuções; comparação em `?base=&alvo=` | `runs`, `run-comparisons` |
 | `/decisoes` | Histórico de decisões (feedback do PCP) | `feedback`, `priorities`, `config` |
-| `/validacao` | Central de validação (resumo, falhas e 2 abas; a aba de modelos inclui o laboratório de previsão) | `validation/summary`, `forecast-lab` |
+| `/validacao` | Central de validação (resumo, falhas e 2 abas; a aba de modelos inclui o laboratório de previsão); mostra o valor em risco endereçado e a pauta Modelo × S&OP | `validation/summary`, `forecast-lab` |
 | `/modelo` | Confiança › Modelo de previsão: o que o modelo prevê, premissas, erro e modelos comparados | `model-benchmark` |
-| `/auditoria` | Auditoria: casos de teste, verificações, limitações, ajustes e método comercial | `validation/summary`, `partners?limit=1` |
+| `/auditoria` | Auditoria: casos de teste, verificações, limitações, ajustes, método comercial, cobertura de regras e lista de pares KA para pedir sell-out | `validation/summary`, `partners?limit=1`, `rules/coverage` |
 | `*` | Página não encontrada | Nenhum |
 
 Códigos de SKU e de parceiro são codificados na URL com `encodeURIComponent`, por exemplo `/parceiros/Loja%20pr%C3%B3pria`.

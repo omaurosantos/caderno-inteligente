@@ -13,17 +13,22 @@ Protótipo de apoio à decisão do PCP em uma cadeia B2B2C. Ele lê uma base XLS
 
 | Pergunta do PCP | Onde |
 |---|---|
-| O que exige atenção agora e por quê? | Início e Planejamento › Fila operacional: ranking por soma transparente de pesos de onze regras; o motivo diz quando a falta começa |
+| O que exige atenção agora e por quê? | Início e Planejamento › Fila operacional: ordem por faixa de urgência e valor em risco em reais (observado × estimado), com a soma transparente de pesos de onze regras como pontuação de sinais; o motivo diz a faixa, o valor e quando a falta começa |
+| Quais decisões precisam ser tomadas hoje? | Início › Decisões de hoje: o que decidir, em qual SKU e até quando (alavanca e prazo) |
+| Quem atender primeiro quando o estoque não cobre todos? | Detalhe do SKU › "Quem atender primeiro" (ordem de atendimento por pedido, com os componentes da pontuação) e Comercial › "Risco por região": sugestão sobre pedidos confirmados, que não reserva estoque |
+| Até onde vemos o consumidor? | Comercial › Parceiros: 75,1% das unidades faturadas têm venda ao consumidor observada (venda direta de E-commerce, Marketplace e Loja própria mais sell-out informado pelos KAs); o resto é "sem visibilidade" |
 | Preciso produzir? Quanto? Quando? | Fila operacional (ação, quantidade a liberar nas próximas 4 semanas) e Detalhe do SKU › Evidências › "Plano de suprimento": pedidos afetados, OPs a antecipar, reduzir ou cancelar, ordens planejadas com data de liberação e projeção semanal |
 | Quanto vou produzir em cada mês? | Fila operacional: gráfico de produção planejada por mês de liberação (liberar agora × depois), no total ou na família filtrada; plano sugerido, não ordem liberada |
-| Onde a produção não cabe? | Planejamento › Capacidade (botão "Ver capacidade" na fila): ordens planejadas encaixadas na capacidade livre de cada linha e semana, com o que fica sem programação e os pedidos afetados |
+| Onde a produção não cabe? | Planejamento › Capacidade (botão "Ver capacidade" na fila): ordens planejadas encaixadas na capacidade livre de cada linha e semana, com o que fica sem programação e os pedidos afetados; depois do calendário da base, a capacidade é estimada e rotulada como tal |
 | Algum parceiro tem risco ou oportunidade? | Comercial: oportunidades ordenadas por menor cobertura de estoque, com a matriz parceiro–SKU com sell-in, sell-out, estoque estimado, estoque acumulando ("não repor") e sugestão comercial |
 | Quanto vamos faturar nos próximos meses? | Financeiro › Faturamento previsto: faturamento estimado (previsão em unidades × preço vigente), sempre rotulado como estimativa, com erro do teste e, no SKU, o cálculo |
 | Qual a ação do desafio para cada SKU, parceiro ou canal? | Fila operacional, Comercial e Canais diretos: rótulo (Produzir, Repor, Priorizar produção, Priorizar parceiro, Ampliar mix, Recomendar recompra, Monitorar, Investigar, Sem ação necessária) com evidências e filtro; a legenda está no Guia |
 | Como vão os canais diretos? | Comercial › Canais diretos: faturamento observado, tendência, carteira e sugestão por SKU, sem estoque por canal; achados entre abas em Dados da planilha |
 | Que evento do calendário vem aí e quando decidir? | Início e Fila operacional: alertas de eventos com data de decisão (início − lead time); no SKU, evidência histórica e cenário com evento, sempre como estimativa |
 | O que o modelo de previsão faz e quais premissas usa? | Confiança › Modelo de previsão: o que é previsto, premissas, erro medido e comparação com outros modelos (statsforecast, scikit-learn, LightGBM, Prophet) |
-| Quanto confiar na análise? | Confiança › Validação e Bastidores › Dados da planilha: erro da previsão em meses normais e de pico, cobertura de sell-out, divergência do cadastro, casos congelados e falhas conhecidas |
+| Quanto confiar na análise? | Confiança › Validação e Bastidores › Dados da planilha: erro da previsão em meses normais e de pico, cobertura de sell-out, divergência do cadastro (inclusive ABC e sell-in × faturado), casos congelados (34 de 34) e falhas conhecidas |
+| Quais regras existem e não dispararam? | Bastidores › Auditoria › Cobertura de regras: disparos por regra e, para as que não dispararam (Ampliar mix, Recomendar recompra, Reativar), o motivo com o número que o comprova; mais os 23 pares KA para pedir sell-out |
+| Onde a IA ajuda e qual o impacto? | Confiança › Modelo de previsão (a previsão aprendida dos dados, testada contra statsforecast, scikit-learn, LightGBM e Prophet; o modelo sazonal simples venceu) e Validação (valor em risco endereçado, pauta Modelo × S&OP e tempo de análise medido; nenhum ganho de processo é afirmado antes de 20 registros) |
 | Por que a prioridade mudou? | Bastidores › Execuções: comparação entre snapshots, com decomposição do score |
 | O que foi decidido? | Acompanhamento › Casos (status, responsável e prazo editáveis) e Histórico de decisões: ação, efeito do dado do parceiro e tempo de análise |
 
@@ -144,6 +149,9 @@ Durante o desenvolvimento, `npm run test:watch` reexecuta os testes do frontend.
 | Linha de base, casos congelados e histórico de ajustes da validação | `config/validation_center.json` |
 | Motor de previsão (cadeia oficial, horizonte, teto sazonal, protocolo de avaliação com pico) | `config/forecast_engine.json` |
 | Plano de suprimento (data de planejamento, janela de decisão, cobertura-alvo, excesso projetado) | `config/supply_plan.json` |
+| Alocação de estoque escasso (pesos de urgência, canal direto, cobertura e pedido pequeno; atendimento parcial) | `config/allocation.json` |
+| Valor em risco e faixas (peso da falta estimada, janela da faixa 2, limites da curva ABC medida) | `config/prioritization_impact.json` |
+| Capacidade estimada além do calendário (método, cenário, janela de 8 semanas; `enabled: false` desliga) | `config/capacity_extension.json` |
 
 Variáveis de ambiente do backend (exemplo em `.env.example`):
 
@@ -207,3 +215,4 @@ Passo a passo completo em [Deploy com Vercel e Supabase](docs/deploy-vercel-supa
 
 - [Histórico das etapas](docs/historico.md): o que cada etapa da V2 entregou, decisões e limitações
 - [Etapa 15 — antes × depois](docs/etapa-15/antes-depois.md)
+- [Etapa 16 — resumo](docs/etapa-16-resumo.md), [especificação](docs/discovery-etapa-16.md) e [antes × depois](docs/etapa-16/antes-depois.md)

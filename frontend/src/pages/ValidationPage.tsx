@@ -6,9 +6,9 @@ import { useApiResource } from '../hooks/useApiResource';
 import { usePageLoadStatus } from '../hooks/usePageLoadStatus';
 import { Alert, Badge, ErrorState, Hint, LoadingState, MetricCard, PageIntro, SectionCard, Tooltip } from '../components';
 import { ForecastLabSection } from '../components/ForecastLab';
-import type { CaseCheck, FrozenCase, MeasuredValue, SafeBehaviorCheck, ValidationSummary } from '../types-validation';
+import type { AddressedValue, CaseCheck, FrozenCase, MeasuredValue, SafeBehaviorCheck, SopDivergence, ValidationSummary } from '../types-validation';
 import { validationCsv } from '../validation-export';
-import { displayNumber, displayPercent, displayShare, formatDate } from './shared';
+import { displayCurrency, displayNumber, displayPercent, displayShare, formatDate, formatMonth } from './shared';
 
 const fieldNames: Record<string, string> = {
   signals: 'Sinais', action: 'Ação', suggested_quantity: 'Quantidade sugerida', requires_human_review: 'Revisão humana',
@@ -70,6 +70,37 @@ function download(summary: ValidationSummary) {
   URL.revokeObjectURL(url);
 }
 
+const signedPercent = (ratio: number) => `${ratio > 0 ? '+' : ''}${displayPercent(ratio)}`;
+const SOP_VISIBLE = 10;
+
+/** Cartão do valor observado em risco dos SKUs com decisão registrada: valor sob decisão, não valor recuperado. */
+function AddressedValueCard({ value }: { value: AddressedValue }) {
+  const label = <>Valor em risco endereçado <Tooltip label="Como ler o valor endereçado">{value.note} Natureza: {value.nature}; não é dinheiro recuperado.{value.skus_without_value.length ? ` Sem valor calculado: ${value.skus_without_value.join(', ')}.` : ''}{value.observed_total === null && value.missing_reason ? ` Indisponível: ${value.missing_reason}` : ''}</Tooltip></>;
+  return <MetricCard label={label} value={value.observed_total === null ? 'Não disponível' : displayCurrency(value.observed_total)} detail={value.decided_skus.length ? 'em SKUs com decisão registrada' : 'nenhuma decisão registrada ainda'} tone="green" icon="validation" />;
+}
+
+function SopRow({ item }: { item: SopDivergence['items'][number] }) {
+  return <tr><td><Link to={`/skus/${encodeURIComponent(item.sku)}`}>{item.sku}</Link><small>{formatMonth(`${item.month}-01`)}</small></td><td>{displayNumber(item.model)}</td><td>{displayNumber(item.sop)}</td><td>{signedPercent(item.ratio)}</td></tr>;
+}
+
+/** Pauta de revisão: onde o modelo e o consenso do S&OP se afastam além do limite. Nenhum dos lados é tratado como o certo. */
+function SopDivergenceSection({ value }: { value: SopDivergence }) {
+  const sorted = [...value.items].sort((a, b) => Math.abs(b.ratio) - Math.abs(a.ratio));
+  const head = sorted.slice(0, SOP_VISIBLE);
+  const rest = sorted.slice(SOP_VISIBLE);
+  const tableHead = <thead><tr><th>SKU e mês</th><th>Modelo</th><th>S&amp;OP</th><th>Diferença</th></tr></thead>;
+  return <SectionCard title="Modelo × S&OP: pauta de revisão" action={<Badge tone="neutral">{value.nature}</Badge>}>
+    <p className="fact-line">{value.note}</p>
+    {value.items.length ? <div className="table-shell" tabIndex={0} role="region" aria-label="Divergências entre modelo e S&OP; role horizontalmente para ver todas as colunas"><table className="data-table validation-table sop-table">
+      <caption>{value.count} divergências acima de {displayShare(value.threshold)} em {new Set(value.items.map((item) => item.sku)).size} SKUs, entre {value.compared_pairs} pares comparados; maiores primeiro (diferença do modelo sobre o S&amp;OP)</caption>
+      {tableHead}<tbody>{head.map((item) => <SopRow key={`${item.sku}-${item.month}`} item={item} />)}</tbody>
+    </table></div> : <p className="validation-muted">Nenhuma divergência acima do limite nos meses comparados.</p>}
+    {rest.length > 0 && <details className="validation-details"><summary>Ver as demais</summary>
+      <div className="table-shell" tabIndex={0} role="region" aria-label="Demais divergências entre modelo e S&OP"><table className="data-table validation-table sop-table">{tableHead}<tbody>{rest.map((item) => <SopRow key={`${item.sku}-${item.month}`} item={item} />)}</tbody></table></div>
+    </details>}
+  </SectionCard>;
+}
+
 export default function ValidationPage({ refreshToken }: { refreshToken: number }) {
   const { data, error, loading, loadedAt, refresh } = useApiResource(api.validationSummary, refreshToken);
   usePageLoadStatus(loading, error, loadedAt);
@@ -112,6 +143,7 @@ export function ValidationContent({ data, error = '', onRetry, refreshToken = 0 
       <MetricCard label="Casos de teste aprovados" value={`${cases.passed} de ${cases.total - (cases.pending ?? 0)}`} detail={`${cases.synthetic} com entrada sintética${cases.pending ? ` · ${cases.pending} pendentes` : ''}`} tone={casesOk ? 'green' : 'red'} icon="validation" />
       <MetricCard label="Erro médio da previsão (WAPE)" value={displayPercent(selected?.weighted_wape)} detail={rolling ? `normais ${displayPercent(selected?.normal_weighted_wape)} · pico ${displayPercent(selected?.peak_weighted_wape)}` : `previsão simples: ${displayPercent(baseline?.weighted_wape)}`} tone="blue" icon="forecasts" />
       <MetricCard label="Modelo pior que a baseline" value={`${forecast.did_not_beat_baseline_skus} de ${forecast.eligible_skus}`} detail={`SKUs · melhor em ${forecast.beat_baseline_skus}`} tone={forecast.did_not_beat_baseline_skus ? 'amber' : 'green'} icon="forecasts" />
+      {data.addressed_value && <AddressedValueCard value={data.addressed_value} />}
     </div>
 
     <SectionCard title="Falhas conhecidas" action={<Link className="secondary-button" to="/auditoria">Auditoria completa</Link>}>
@@ -137,6 +169,7 @@ export function ValidationContent({ data, error = '', onRetry, refreshToken = 0 
     </div>
 
     <div role="tabpanel" id="panel-modelos" aria-labelledby="tab-modelos" hidden={tab !== 'modelos'} className="tab-panel">
+      {data.sop_divergence && <SopDivergenceSection value={data.sop_divergence} />}
       <SectionCard title="Desempenho dos modelos">
         <div className="table-shell" tabIndex={0} role="region" aria-label="Desempenho dos modelos; role horizontalmente para ver todas as colunas"><table className="data-table validation-table">
           <thead><tr><th>Modelo</th><th>Erro ponderado (WAPE) <Hint term="wape" /></th><th>Escolhido em</th></tr></thead>
@@ -163,10 +196,11 @@ function AuditBlock({ title, note, children }: { title: string; note: string; ch
 }
 
 /** Material de auditoria (não é tela de decisão): casos congelados, verificações, limitações, ajustes e origem dos dados. */
-export function AuditoriaContent({ data, method }: { data: ValidationSummary; method?: ReactNode }) {
+export function AuditoriaContent({ data, method, coverage }: { data: ValidationSummary; method?: ReactNode; coverage?: ReactNode }) {
   const { frozen_cases: cases, forecast_evaluation: forecast } = data;
   return <div className="validation-page">
     <PageIntro title="Auditoria: como os resultados foram testados" />
+    {coverage}
     <AuditBlock title="Casos de teste congelados" note={`${cases.total} casos, congelados em ${formatDate(cases.frozen_at)}`}>
       <p className="fact-line">{cases.policy}</p>
       <div className="validation-cases">{cases.items.map((item) => <details key={item.id} className={`validation-case is-${item.result}`} open={item.result === 'falhou' || item.result === 'nao_encontrado'}>

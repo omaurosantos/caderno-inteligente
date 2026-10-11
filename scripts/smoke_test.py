@@ -110,8 +110,8 @@ def backend_checks(runner: Runner, backend: str, frontend: str | None = None, ex
     if priorities and runner.check("dados", "ranking responde 200", priorities.status == 200):
         rows = priorities.json()
         positions = [row["priority"] for row in rows]
-        scores = [row["attention_score"] for row in rows]
-        runner.check("dados", "ranking sequencial e ordenado por score", positions == list(range(1, len(rows) + 1)) and scores == sorted(scores, reverse=True), f"{len(rows)} SKUs")
+        tiers = [row.get("urgency_tier") or 0 for row in rows]
+        runner.check("dados", "ranking sequencial e ordenado por faixa", positions == list(range(1, len(rows) + 1)) and tiers == sorted(tiers), f"{len(rows)} SKUs")
         if rows:
             found["sku"] = rows[0]["sku"]
 

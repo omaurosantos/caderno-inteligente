@@ -25,10 +25,12 @@ const { Topbar, RuleLine, Alert, Tooltip } = await import(componentsUrl);
 // Indicadores e pizza do painel buscam a API sozinhos e os gráficos usam Recharts: cobertos pelo Vitest.
 const overviewPanelStub = dataUrl('export const OverviewKpis = () => null; export const RevenueByFamily = () => null; export const TopSkusByRevenue = () => null; export const DirectChannelsRevenue = () => null;');
 const projectedChartStub = dataUrl('export const ProjectedStockChart = () => null;');
+// "Decisões de hoje" (Etapa 16.4) tem testes próprios no Vitest.
+const decisionsTodayStub = dataUrl('export const DecisionsToday = () => null;');
 // O Início lê o faturamento uma vez para os blocos (stubados acima); aqui a leitura não acontece.
 const apiStub = dataUrl('export const api = {};');
 const resourceStub = dataUrl("export const useApiResource = () => ({ data: undefined, error: '', loading: true, refresh: async () => {} });");
-const { default: OverviewPage } = await import(await compile('../src/pages/OverviewPage.tsx', { '../components': componentsUrl, './shared': sharedUrl, '../api': apiStub, '../hooks/useApiResource': resourceStub, '../components/OverviewPanel': overviewPanelStub, '../components/ProjectedStockChart': projectedChartStub }));
+const { default: OverviewPage } = await import(await compile('../src/pages/OverviewPage.tsx', { '../components': componentsUrl, './shared': sharedUrl, '../api': apiStub, '../hooks/useApiResource': resourceStub, '../components/OverviewPanel': overviewPanelStub, '../components/ProjectedStockChart': projectedChartStub, '../components/DecisionsToday': decisionsTodayStub }));
 const { AttentionFocus } = await import(await compile('../src/components/AttentionFocus.tsx', { '../components': componentsUrl, '../pages/shared': sharedUrl }));
 const render = element => renderToStaticMarkup(element);
 

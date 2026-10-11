@@ -50,6 +50,12 @@ def test_card_describes_what_is_forecast_and_its_assumptions(card):
     assert card["limitations"] and card["confidence"]["rule"]
 
 
+def test_seasonal_level_description_shows_the_configured_ceiling(card):
+    seasonal = next(model for model in card["models"] if model["model"] == "seasonal_level")
+    assert "3,0" in seasonal["description"]
+    assert "2,0" not in seasonal["description"]
+
+
 def test_card_error_matches_the_official_forecast(card):
     forecasts = main.pipeline()[5]
     expected = forecasts["backtest_abs_error_units"].sum() / forecasts["backtest_actual_units"].sum()

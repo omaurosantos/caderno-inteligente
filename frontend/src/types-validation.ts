@@ -126,6 +126,30 @@ export interface Adjustment {
   changed_weights_or_models: boolean;
 }
 
+/** Etapa 16.7: soma do valor observado em risco dos SKUs com decisão registrada (valor sob decisão, não recuperado). */
+export interface AddressedValue {
+  /** `null` + `missing_reason` quando a persistência falha ou não há decisões registradas: ausente nunca vira zero. */
+  observed_total: number | null;
+  missing_reason?: string | null;
+  sku_count: number;
+  decided_skus: string[];
+  /** Decididos sem valor observado calculado: ficam fora da soma. */
+  skus_without_value: string[];
+  nature: 'observado';
+  note: string;
+}
+
+/** Etapa 16.7: pauta modelo × consenso S&OP (divergência acima do limite; não é erro de nenhum dos lados). */
+export interface SopDivergence {
+  months: string[];
+  threshold: number;
+  count: number;
+  compared_pairs: number;
+  items: Array<{ sku: string; month: string; model: number; sop: number; ratio: number }>;
+  nature: 'calculado';
+  note: string;
+}
+
 export interface ValidationSummary {
   generated_at: string;
   source: { sha256: string; sales_reference_month: string | null };
@@ -138,4 +162,7 @@ export interface ValidationSummary {
   known_limitations: string[];
   adjustments: Adjustment[];
   requires_human_review: boolean;
+  /** Etapa 16.7; ausentes em respostas antigas. */
+  addressed_value?: AddressedValue;
+  sop_divergence?: SopDivergence;
 }

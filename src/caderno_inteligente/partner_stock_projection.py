@@ -1,4 +1,4 @@
-"""Projeção do estoque no parceiro por par parceiro–SKU (só backend; aguarda validação do grupo antes de ir à tela).
+"""Projeção do estoque no parceiro por par parceiro–SKU (rota própria; usada como evidência estimada nas linhas Repor).
 
 Usa a identidade observada em 100% dos meses da base: estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t).
 
@@ -8,7 +8,7 @@ Usa a identidade observada em 100% dos meses da base: estoque(t) = estoque(t−1
 - o erro de sell-out e de sell-in (WAPE e viés) é medido em origens rolantes com a mesma média e sai em toda resposta.
 
 Só pares com sell-out observado entram; par com mês faltante na janela fica `insufficient_data` (ausente nunca vira zero).
-Nada aqui altera ranking, recomendação comercial ou plano oficial.
+Nada aqui altera ranking nem plano oficial; na recomendação comercial entra só como evidência estimada, sem autorizar quantidade.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ LIMITATIONS = (
     "Estimativa: o sell-out previsto é a média dos últimos meses e não capta sazonalidade (há só 12 meses por par).",
     "Só vale para pares parceiro–SKU com sell-out informado pelo parceiro; os demais não têm projeção.",
     "O cenário com reposição supõe que o sell-in continue na média recente; ele é uma decisão da empresa, não uma previsão.",
-    "Projeção em revisão pelo grupo: não alimenta ranking, recomendação comercial nem plano de produção.",
+    "Usada como evidência estimada nas linhas Repor da recomendação comercial; não altera ranking nem plano de produção e exige revisão humana.",
 )
 
 
@@ -167,3 +167,20 @@ def build_partner_stock_projection(dataset: dict[str, pd.DataFrame], settings: d
         "nature": "estimado",
         "requires_human_review": True,
     }
+
+
+def projection_by_pair(dataset: dict[str, pd.DataFrame], settings: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Evidência por par para as linhas Repor: dias até o estoque zerar sem reposição, quantidade para a cobertura-alvo e WAPE agregado do sell-out."""
+    result = build_partner_stock_projection(dataset, settings)
+    wape = result["errors"]["sell_out"]["wape"]
+    wape = None if wape is None else float(wape)
+    pairs = {}
+    for item in result["items"]:
+        ok = item["status"] == "ok"
+        pairs[(item["partner"], item["sku"])] = {
+            "days_until_stockout_without_replenishment": item["coverage_days_now"] if ok else None,
+            "replenishment_to_target": item["replenishment_to_target"] if ok else None,
+            "sell_out_wape": wape,
+            "status": item["status"], "reason": item["reason"], "nature": "estimado",
+        }
+    return pairs

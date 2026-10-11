@@ -1,6 +1,7 @@
 import { api } from '../api';
 import { useApiResource } from '../hooks/useApiResource';
 import { DirectChannelsRevenue, OverviewKpis, RevenueByFamily, TopSkusByRevenue } from '../components/OverviewPanel';
+import { DecisionsToday } from '../components/DecisionsToday';
 import { ProjectedStockChart } from '../components/ProjectedStockChart';
 import { PageIntro } from '../components';
 import type { PageProps } from './shared';
@@ -15,6 +16,7 @@ export default function OverviewPage({ data, refreshToken }: PageProps<'overview
   return <div className="decision-journey">
     <PageIntro title="Indicadores" />
     <OverviewKpis overview={overview} revenue={revenue} refreshToken={refreshToken} />
+    <DecisionsToday data={overview.decisions_today} />
     {/* Mosaico 2 × 2: falta de estoque e faturamento por família em cima; SKUs e canais embaixo. */}
     <div className="home-mosaic">
       <ProjectedStockChart summary={overview.projected_stock ?? null} />

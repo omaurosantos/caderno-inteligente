@@ -1,4 +1,4 @@
-"""Rota aditiva da projeção de estoque no parceiro; sem tela até o grupo validar, e nunca altera nada oficial."""
+"""Rota aditiva da projeção de estoque no parceiro; a recomendação comercial a usa só como evidência estimada; nunca altera nada oficial."""
 from pathlib import Path
 from typing import Callable
 

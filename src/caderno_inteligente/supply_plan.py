@@ -385,6 +385,16 @@ def build_sku_plan(indicator: dict[str, Any], forecast: dict[str, Any] | None, o
     planned_levels = project(stock, days, demand, merged)
     reported_orders = affected_orders(stock, orders, merged, reference, horizon_end)
 
+    # Etapa 16.2 (contrato C1): as mesmas séries de oferta e a carteira aberta, para a alocação entre pedidos. Nada é recalculado.
+    supply_events = [{"date": _iso(reference), "quantity": stock, "source": "estoque", "ref": None}] if stock > 0 else []
+    supply_events += [{"date": _iso(max(op["finish"], reference)), "quantity": op["quantity"], "source": "op", "ref": op["order"]}
+                      for op in ops if op["finish"] is not None]
+    supply_events += [{"date": order["due_date"], "quantity": order["quantity"], "source": "planejada", "ref": None} for order in planned]
+    source_order = {"estoque": 0, "op": 1, "planejada": 2}
+    supply_events.sort(key=lambda event: (event["date"], source_order[event["source"]]))
+    open_orders = [{"order": order["order"], "client": order["client"], "quantity": order["quantity"], "promised_date": _iso(order["promised_date"])}
+                   for order in orders]
+
     antecipation = any(item["adjustment"] == "antecipar" for item in adjustments)
     reductions = [item for item in adjustments if item["adjustment"] in ("reduzir", "cancelar")]
     signals = []
@@ -409,6 +419,7 @@ def build_sku_plan(indicator: dict[str, Any], forecast: dict[str, Any] | None, o
         "discontinued": discontinued, "current_stock": stock, "minimum_lot": lot,
         "first_shortfall_date": _iso(first_shortfall), "early_shortfall": bool(early_shortfall or early_late_orders),
         "affected_orders": reported_orders, "op_adjustments": adjustments, "planned_orders": planned,
+        "supply_events": supply_events, "open_orders": open_orders,
         "antecipation": antecipation, "reductions": bool(reductions),
         "suggested_quantity": float(sum(order["quantity"] for order in urgent_orders)),
         "planned_quantity_horizon": float(sum(order["quantity"] for order in planned)),

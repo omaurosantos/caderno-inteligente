@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from caderno_inteligente.direct_channels import direct_channel_codes
+from caderno_inteligente.partner_stock_projection import DEFAULT_PATH as PROJECTION_SETTINGS, load_partner_projection_settings, projection_by_pair
+
 DEFAULT_THRESHOLDS = {
     "recent_months": 3, "minimum_sell_out_months": 3, "maximum_age_months": 1,
     "reposition_coverage_days": 30, "excess_coverage_days": 90,
@@ -24,7 +27,11 @@ ACTION_LABELS = {
     # Etapa 15.5: estoque parado no parceiro.
     "conter_reposicao": "Não repor; acionar sell-out com o parceiro",
     "monitorar_excesso_parceiro": "Monitorar estoque alto no parceiro",
+    # Etapa 16.1: canal direto vende ao consumidor; o faturamento é a venda observada.
+    "canal_direto": "Venda direta ao consumidor: acompanhar pelo canal",
 }
+DIRECT_STOCK_REASON = "Sem estoque intermediário: o estoque que atende o canal é o do CD"
+DIRECT_DATA_NATURE = "Observado (faturamento direto)"
 SIGNAL_LABELS = {
     "REPOSITION_OPPORTUNITY": "Possível oportunidade de reposição",
     "PARTNER_EXCESS_RISK": "Possível excesso no parceiro",
@@ -65,6 +72,11 @@ FIELD_NATURE.update({
     "stock_start": {"nature": "estimado na fonte", "origin": "Sell_Out.Estoque estimado cliente no mês anterior à janela de acúmulo"},
     "stock_growth": {"nature": "calculado: (estoque final − inicial) ÷ inicial", "origin": "Sell_Out.Estoque estimado cliente"},
     "stock_identity_consistent": {"nature": "calculado: estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t), dentro da tolerância", "origin": "Sell_In e Sell_Out"},
+    # Etapa 16.1: canais diretos usam o faturamento como venda ao consumidor.
+    "row_kind": {"nature": "cadastral", "origin": "Parceiros_Canais.Tipo: 'direct' para Canal direto, 'partner' para os demais"},
+    "visibility_source": {"nature": "cadastral", "origin": "faturamento_direto (Vendas_24m) para Canal direto; sell_out_parceiro (Sell_Out) para os demais"},
+    "stock_reason": {"nature": "explicação da ausência de estoque estimado", "origin": "canal direto não tem estoque intermediário; o estoque é o do CD"},
+    "forward_projection": {"nature": "estimado: sell-out previsto pela média dos últimos meses; não é autorização de envio", "origin": "partner_stock_projection e config/partner_projection.json"},
 })
 
 
@@ -156,8 +168,82 @@ def _buildup(history: pd.DataFrame, reference, cfg: dict) -> dict:
     }
 
 
-def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | None = None) -> dict:
-    """Read-only, reproducible reference is the latest month of sell-in/out, not wall clock."""
+def _billing(sales: pd.DataFrame | None, direct: set[str]) -> pd.DataFrame:
+    """Faturamento dos canais diretos por canal/SKU/mês (Vendas_24m); sem a aba, nada é observado."""
+    columns = ["partner", "sku", "month", "billed_quantity"]
+    if sales is None or not direct:
+        return pd.DataFrame(columns=columns)
+    frame = sales[sales["Cliente/Canal"].isin(direct)].rename(columns={"Cliente/Canal": "partner", "SKU": "sku", "Mês": "month", "Quantidade faturada": "billed_quantity"})
+    frame = frame[columns].copy()
+    frame["month"] = pd.to_datetime(frame["month"], errors="raise").dt.to_period("M")
+    frame["billed_quantity"] = pd.to_numeric(frame["billed_quantity"], errors="raise")
+    return frame.groupby(["partner", "sku", "month"], as_index=False)["billed_quantity"].sum(min_count=1)
+
+
+def _backlog_fields(backlog: pd.DataFrame) -> dict:
+    return {
+        "backlog_quantity": float(backlog["Quantidade"].sum()), "backlog_order_count": len(backlog),
+        "orders": [{"order": r["Pedido"], "quantity": float(r["Quantidade"]), "promised_date": None if pd.isna(r["Data prometida"]) else pd.Timestamp(r["Data prometida"]).date().isoformat(), "status": r["Status"]} for _, r in backlog.iterrows()],
+    }
+
+
+def _direct_row(partner, sku, fields: pd.Series, product, backlog: pd.DataFrame, history: pd.DataFrame, reference, window: list, cfg: dict) -> dict:
+    """Etapa 16.1: no canal direto o faturamento é a venda ao consumidor; não há estoque intermediário para estimar."""
+    history = history[history["billed_quantity"].notna()].sort_values("month")
+    recent = history[history["month"].isin(window)]
+    sold = recent[recent["billed_quantity"] > 0]
+    billed_months = history.loc[history["billed_quantity"] > 0, "month"]
+    latest = None if billed_months.empty else billed_months.max()
+    enough = len(sold) >= cfg["minimum_sell_out_months"]
+    total = None if recent.empty else float(recent["billed_quantity"].sum())
+    avg = None if recent.empty else float(recent["billed_quantity"].mean())
+    observed = set(sold["month"])
+    if enough:
+        action, signals = "canal_direto", []
+        rationale = (f"Venda direta ao consumidor: {total:g} unidades faturadas em {len(sold)} meses (Vendas_24m), média de {avg:g} un./mês. "
+                     "Sem estoque intermediário; cobertura, acúmulo e divergência não se aplicam. Uma falta em pedido do canal depende do estoque do CD.")
+    else:
+        action, signals = "dados_insuficientes", ["INSUFFICIENT_PARTNER_DATA"]
+        rationale = (f"Faturamento direto em {len(sold)} dos {len(window)} meses recentes (mínimo {cfg['minimum_sell_out_months']}). "
+                     "Sem venda observada suficiente no canal; nenhuma recomendação é inferida.")
+    return {
+        "partner": partner, "partner_name": _text(fields["Nome fictício"]), "sku": sku,
+        "product": _text(product), "region": _text(fields.get("Região")), "channel": _text(fields.get("Canal principal")),
+        "row_kind": "direct", "visibility_source": "faturamento_direto", "stock_reason": DIRECT_STOCK_REASON,
+        "forward_projection": None, "forward_projection_reason": None,
+        "reference_month": None if reference is None else str(reference), "window_months": [str(m) for m in window],
+        "sell_in_recent": None, "sell_in_months": [],
+        "sell_out_recent": total, "sell_out_months": [str(m) for m in sold["month"]],
+        **_buildup(pd.DataFrame(), None, cfg),
+        "comparable_months": [], "comparable_sell_in": None, "comparable_sell_out": None, "comparable_difference": None, "divergence_ratio": None,
+        "estimated_stock": None, "stock_month": None, "data_nature": DIRECT_DATA_NATURE if enough else None,
+        "average_monthly_sell_out": avg, "coverage_days": None,
+        "age_months": None if reference is None or latest is None else reference.ordinal - latest.ordinal,
+        "missing_months": [str(month) for month in window if month not in observed],
+        "data_quality": "sufficient" if enough else "insufficient",
+        **_backlog_fields(backlog),
+        "signals": [{"code": code, "label": SIGNAL_LABELS[code]} for code in signals],
+        "action": action, "action_label": ACTION_LABELS[action], "requires_human_review": True,
+        "recommendation_reason": rationale,
+        "periods": [{"month": str(r["month"]), "sell_in_quantity": None, "sell_out_quantity": _number(r["billed_quantity"]), "estimated_stock": None,
+                     "data_nature": DIRECT_DATA_NATURE} for _, r in history.iterrows()],
+    }
+
+
+def _load_projection(data: dict[str, pd.DataFrame]) -> tuple[dict | None, str | None]:
+    """Etapa 16.6: projeção estimada por par; falha não derruba a análise (campo None + motivo)."""
+    try:
+        return projection_by_pair(data, load_partner_projection_settings(PROJECTION_SETTINGS)), None
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return None, f"Projeção do parceiro indisponível: {error}"
+
+
+def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | None = None, projection: dict | str | None = "auto") -> dict:
+    """Read-only, reproducible reference is the latest month of sell-in/out, not wall clock.
+
+    `projection`: "auto" carrega config/partner_projection.json; um dict (saída de `projection_by_pair`) é usado como está; None desliga.
+    Linhas de parceiro com dado suficiente ganham `forward_projection` (evidência estimada); as demais ficam None.
+    """
     cfg = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
     cfg = _validate_thresholds(cfg)
     incoming = _monthly(data["Sell_In"], {"Quantidade enviada": "sell_in_quantity"})
@@ -186,9 +272,19 @@ def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | Non
     pairs = set(zip(monthly["partner"], monthly["sku"])) | set(zip(orders["Cliente/Canal"], orders["SKU"]))
     catalog = products.set_index("SKU")
     registry = partners.set_index("Código")
+    direct = set(direct_channel_codes(partners))
+    billing = _billing(data.get("Vendas_24m"), direct)
+    projection_reason = None
+    if isinstance(projection, str):
+        projection, projection_reason = _load_projection(data)
     rows = []
     for partner, sku in sorted(pairs):
-        history = monthly[(monthly["partner"] == partner) & (monthly["sku"] == sku)].sort_values("month")
+        if partner in direct:
+            backlog = orders[(orders["Cliente/Canal"] == partner) & (orders["SKU"] == sku)]
+            rows.append(_direct_row(partner, sku, registry.loc[partner], catalog.loc[sku, "Produto"], backlog,
+                                    billing[(billing["partner"] == partner) & (billing["sku"] == sku)], reference, window, cfg))
+            continue
+        history =monthly[(monthly["partner"] == partner) & (monthly["sku"] == sku)].sort_values("month")
         recent = history[history["month"].isin(window)]
         sell_out = history[history["sell_out_quantity"].notna()]
         recent_out = recent[recent["sell_out_quantity"].notna()]
@@ -260,11 +356,19 @@ def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | Non
         else:
             rationale = "Dados suficientes no recorte, sem exceção que justifique outra sugestão. Monitoramento de rotina não afirma excesso de estoque."
         quality = "stale" if stale else "sufficient" if enough else "insufficient"
+        forward, forward_reason = None, None
+        if quality == "sufficient" and projection is not None:
+            forward = projection.get((partner, sku)) or {"status": "insufficient_data", "nature": "estimado", "days_until_stockout_without_replenishment": None,
+                                                         "replenishment_to_target": None, "sell_out_wape": None, "reason": "Par sem sell-out na base da projeção."}
+        elif quality == "sufficient":
+            forward_reason = projection_reason
         backlog = orders[(orders["Cliente/Canal"] == partner) & (orders["SKU"] == sku)]
         fields = registry.loc[partner]
         rows.append({
             "partner": partner, "partner_name": _text(fields["Nome fictício"]), "sku": sku,
             "product": _text(catalog.loc[sku, "Produto"]), "region": _text(fields.get("Região")), "channel": _text(fields.get("Canal principal")),
+            "row_kind": "partner", "visibility_source": "sell_out_parceiro", "stock_reason": None,
+            "forward_projection": forward, "forward_projection_reason": forward_reason,
             "reference_month": None if reference is None else str(reference), "window_months": [str(m) for m in window],
             "sell_in_recent": None if recent_in.empty else float(recent_in["sell_in_quantity"].sum()),
             "sell_in_months": [str(m) for m in recent_in["month"]],
@@ -277,8 +381,7 @@ def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | Non
             "data_nature": None if last is None else _text(last["data_nature"]),
             "average_monthly_sell_out": avg, "coverage_days": coverage, "age_months": age,
             "missing_months": missing_months, "data_quality": quality,
-            "backlog_quantity": float(backlog["Quantidade"].sum()), "backlog_order_count": len(backlog),
-            "orders": [{"order": r["Pedido"], "quantity": float(r["Quantidade"]), "promised_date": None if pd.isna(r["Data prometida"]) else pd.Timestamp(r["Data prometida"]).date().isoformat(), "status": r["Status"]} for _, r in backlog.iterrows()],
+            **_backlog_fields(backlog),
             "signals": [{"code": code, "label": SIGNAL_LABELS[code]} for code in signals],
             "action": action, "action_label": ACTION_LABELS[action], "requires_human_review": True,
             "recommendation_reason": rationale,
@@ -289,11 +392,18 @@ def build_partner_insights(data: dict[str, pd.DataFrame], thresholds: dict | Non
     for _, partner in partners.iterrows():
         code = partner["Código"]
         subset = [row for row in rows if row["partner"] == code]
-        observed = outgoing[outgoing["partner"] == code]
-        observed_skus = int(observed[observed["sell_out_quantity"].notna()]["sku"].nunique())
-        latest = observed.loc[observed["sell_out_quantity"].notna(), "month"]
+        if code in direct:
+            # Etapa 16.1: canal direto é observado pelo faturamento nos meses recentes da janela comercial.
+            billed = billing[(billing["partner"] == code) & (billing["billed_quantity"] > 0)]
+            observed_skus = int(billed.loc[billed["month"].isin(window), "sku"].nunique())
+            latest = billed["month"]
+        else:
+            observed = outgoing[outgoing["partner"] == code]
+            observed_skus = int(observed[observed["sell_out_quantity"].notna()]["sku"].nunique())
+            latest = observed.loc[observed["sell_out_quantity"].notna(), "month"]
         summaries.append({
             "code": code, "name": _text(partner["Nome fictício"]), "type": _text(partner["Tipo"]),
+            "visibility_source": "faturamento_direto" if code in direct else "sell_out_parceiro",
             "region": _text(partner.get("Região")), "channel": _text(partner.get("Canal principal")),
             "state": _text(partner.get("UF")), "city": _text(partner.get("Cidade")),
             "observed_skus": observed_skus, "linked_skus": len(subset), "total_catalog_skus": total_skus,

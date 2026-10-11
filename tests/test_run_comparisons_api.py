@@ -79,3 +79,29 @@ def test_comparison_errors(client):
     assert client.get(f"/api/run-comparisons?base={run_id}&target=99999").status_code == 404
     assert client.get("/api/run-comparisons?base=0&target=1").status_code == 422
     assert client.get(f"/api/runs/{run_id}").status_code == 200
+
+
+def test_snapshot_keeps_tier_and_value_and_weight_change_never_moves_tier(client, tmp_path):
+    """Etapa 16.3: o snapshot guarda faixa e valor em risco; mudar só um peso altera sinais, nunca faixa ou valor."""
+    official = client.post("/api/runs").json()["id"]
+    ranking = client.get(f"/api/runs/{official}").json()["ranking"]
+    assert ranking and all(item["urgency_tier"] in (1, 2, 3, 4) and isinstance(item["value_at_risk"], dict) for item in ranking)
+    weights = {**main.load_weights(), "LOW_SELLOUT_VISIBILITY": 40}
+    scenario = client.post("/api/scenarios", json={"weights": weights}).json()
+    persistence = SqlitePersistence(tmp_path / "cases.db", tmp_path / "feedback.db", tmp_path / "runs.db")
+    simulated = persistence.create_run(main.SOURCE, scenario["weights"], scenario["thresholds"], {}, scenario["ranking"])
+    result = client.get(f"/api/run-comparisons?base={official}&target={simulated}").json()["ranking"]
+    assert result["summary"]["by_driver"]["faixa"] == 0 and result["summary"]["by_driver"]["valor"] == 0
+    for item in result["changed"]:
+        assert item["ranking_basis"] == "faixa_e_valor" and item["tier_change"] is None and item["value_change"] is None
+        if item["position_delta"]:
+            # só desempate dentro da mesma faixa e valor (do próprio SKU ou de um vizinho empatado)
+            assert item["position_driver"] in ("sinais", "outros_skus"), item["sku"]
+    # um snapshot antigo (sem faixa) contra o atual: a troca de posição é atribuída à mudança de critério
+    legacy_ranking = [{key: value for key, value in item.items() if key not in ("urgency_tier", "value_at_risk")} for item in ranking]
+    legacy_ranking.sort(key=lambda item: (-item["attention_score"], item["sku"]))
+    for position, item in enumerate(legacy_ranking, start=1):
+        item["priority"] = position
+    legacy = persistence.create_run(main.SOURCE, main.load_weights(), main.load_rule_thresholds(), {}, legacy_ranking)
+    mixed = client.get(f"/api/run-comparisons?base={legacy}&target={official}").json()["ranking"]
+    assert mixed["available"] and mixed["summary"]["by_driver"]["criterio"] == sum(bool(item["position_delta"]) for item in mixed["changed"]) > 0

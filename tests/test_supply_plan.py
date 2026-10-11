@@ -170,6 +170,26 @@ def test_rules_emit_the_plan_signals():
     assert shortfall["values_used"]["affected_orders"] == ["PED-1"]
 
 
+def test_plan_exposes_the_supply_series_and_open_orders_without_recalculating():
+    ops = _ops(("OP-1", 300, "2026-09-01", "2026-09-10", "Em produção"), ("OP-2", 200, "2026-09-20", "2026-09-30", "Planejada"))
+    orders = [_order("PED-2", 50, "2026-09-20", client="KA-02"), _order("PED-1", 500, "2026-09-18")]
+    plan = _plan(_indicator(current_stock=100.0), orders=orders, ops=ops)
+    events = plan["supply_events"]
+    assert [event for event in events if event["source"] != "planejada"] == [
+        {"date": "2026-09-14", "quantity": 100.0, "source": "estoque", "ref": None},
+        {"date": "2026-09-14", "quantity": 300.0, "source": "op", "ref": "OP-1"},  # vencida entra na referência, como em _receipts
+        {"date": "2026-09-30", "quantity": 200.0, "source": "op", "ref": "OP-2"},
+    ]
+    planned = [event for event in events if event["source"] == "planejada"]
+    assert [(event["date"], event["quantity"]) for event in planned] == [(order["due_date"], order["quantity"]) for order in plan["planned_orders"]]
+    assert [event["date"] for event in events] == sorted(event["date"] for event in events)
+    assert plan["open_orders"] == [
+        {"order": "PED-2", "client": "KA-02", "quantity": 50.0, "promised_date": "2026-09-20"},
+        {"order": "PED-1", "client": "KA-01", "quantity": 500.0, "promised_date": "2026-09-18"},
+    ]
+    assert all(event["source"] != "estoque" for event in _plan(_indicator(current_stock=0.0))["supply_events"])  # sem estoque, sem evento
+
+
 # ------------------------------------------------------------------------------------------ base real
 
 
@@ -198,3 +218,25 @@ def test_discontinued_and_oversized_ops_are_flagged_on_the_base(client):
     assert adjusted["CI-0050"] == {"OP-7849": "cancelar"}
     assert adjusted["CI-0047"] == {"OP-7846": "reduzir"}
     assert adjusted["CI-0048"]["OP-7847"] == "reduzir" and adjusted["CI-0009"]["OP-7808"] == "reduzir"
+
+
+def test_supply_series_do_not_change_the_plan_on_the_base(client):
+    """Etapa 16.2 (C1): os campos novos são aditivos; quantidade e ação seguem iguais ao snapshot "antes" da Etapa 16."""
+    import json
+    from pathlib import Path
+
+    before = {item["sku"]: item for item in json.loads((Path(main.ROOT) / "docs/etapa-16/antes.json").read_text(encoding="utf-8"))["skus"]}
+    plans = main._cached()[2]
+    assert set(before) <= set(plans)
+    for sku, item in before.items():
+        plan = plans[sku]
+        assert plan["suggested_quantity"] == item["suggested_quantity"], sku
+        # As séries reproduzem a carteira afetada do plano: mesmas chegadas (OP + planejada), mesmos pedidos.
+        receipts = {}
+        for event in plan["supply_events"]:
+            if event["source"] != "estoque":
+                day = date.fromisoformat(event["date"])
+                receipts[day] = receipts.get(day, 0.0) + event["quantity"]
+        orders = [{**order, "promised_date": None if order["promised_date"] is None else date.fromisoformat(order["promised_date"])} for order in plan["open_orders"]]
+        assert affected_orders(plan["current_stock"], orders, receipts, REFERENCE, date.fromisoformat(plan["horizon_end"])) == plan["affected_orders"], sku
+        assert sum(event["quantity"] for event in plan["supply_events"] if event["source"] == "planejada") == plan["planned_quantity_horizon"], sku

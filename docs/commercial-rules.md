@@ -1,4 +1,4 @@
-# Regras comerciais — Etapas 4 e 15.5
+# Regras comerciais — Etapas 4, 15.5 e 16
 
 Estas regras são demonstrativas e independentes das regras operacionais. Desde a Etapa 15.5, um único sinal sobe para o SKU: estoque acumulando no parceiro (`PARTNER_STOCK_BUILDUP`), que entra no score e na evidência da OP a rever. Os demais não alteram score, ranking, previsão ou quantidade. Os limites não foram validados pela empresa.
 
@@ -74,7 +74,23 @@ Na base atual: KA-02 · CI-0009 é o único acúmulo (vendeu 59% do que recebeu 
 
 ## Rótulos de ação do desafio
 
-As ações acima continuam sendo a fonte. Um segundo campo, `challenge_action`, traduz cada par para o vocabulário do desafio sem alterá-las: `avaliar_reposicao` → **Repor**; `conter_reposicao` → **Investigar** (acúmulo: não repor e investigar o giro com o parceiro); `monitorar_excesso_parceiro` → **Monitorar**; `monitorar_estoque` → **Monitorar** (ou **Recomendar recompra** quando o par vende mas está sem sell-in acima do próprio ritmo); `investigar_divergencia`, `solicitar_atualizacao` e `dados_insuficientes` → **Investigar**. No nível do parceiro, **Priorizar parceiro** exige 2 ou mais pares **Repor**, com pelo menos um SKU entre os 10 primeiros da fila de atenção. Parceiro sem sell-out suficiente nunca recebe oportunidade inferida. Detalhes e limiares em [Etapa 13](historico.md).
+As ações acima continuam sendo a fonte. Um segundo campo, `challenge_action`, traduz cada par para o vocabulário do desafio sem alterá-las: `avaliar_reposicao` → **Repor**; `conter_reposicao` → **Investigar** (acúmulo: não repor e investigar o giro com o parceiro); `monitorar_excesso_parceiro` → **Monitorar**; `monitorar_estoque` → **Monitorar** (ou **Recomendar recompra** quando o par vende mas está sem sell-in acima do próprio ritmo); `investigar_divergencia`, `solicitar_atualizacao` e `dados_insuficientes` → **Investigar**. No nível do parceiro, **Priorizar parceiro** exige 2 ou mais pares **Repor**, com pelo menos um SKU entre os 10 primeiros da fila de atenção.
+
+Desde a Etapa 16.4, "Priorizar parceiro" também sai do nível do SKU: quando um pedido confirmado sem cobertura é disputado por 2 ou mais clientes, a decisão é **quem atender primeiro** com o estoque existente ("Atender KA-05 antes de KA-02"), vinda da alocação ([cálculos](calculations.md#35-alocação-de-produto-escasso-allocationpy)). Os 5 SKUs disputados (CI-0004, CI-0005, CI-0027, CI-0041 e CI-0049) saem com esse rótulo e a alavanca `alocar`. O critério do parceiro (2 ou mais pares Repor e um SKU entre os 10 primeiros) continua valendo para o parceiro. Parceiro sem sell-out suficiente nunca recebe oportunidade inferida. Detalhes e limiares em [Etapa 13](historico.md).
+
+## Canais diretos nas linhas comerciais (Etapa 16.1)
+
+E-commerce, Marketplace e Loja própria vendem ao consumidor: o faturamento de `Vendas_24m` **é** a venda observada. As 22 linhas desses canais (`row_kind = "direct"`, `visibility_source = "faturamento_direto"`) têm `action = "canal_direto"`, dado `sufficient` com natureza "Observado (faturamento direto)", estoque estimado `null` e o motivo "sem estoque intermediário: o estoque que atende o canal é o do CD". Não aplicam cobertura, acúmulo nem divergência, que pressupõem estoque no parceiro, e não são dado insuficiente. O rótulo é o da sugestão do canal (`direct_channels.py`), normalmente Monitorar, ou Investigar quando o canal cai de verdade. Cobertura exibida: 100% nos canais diretos, contra 20% nos parceiros KA.
+
+As 23 linhas KA com carteira e sem sell-out suficiente continuam `dados_insuficientes`: a lacuna real não some. Elas saem como Investigar com o sinal `SELL_OUT_REQUEST`, e a lista completa (ordenada pelo valor do pedido) fica em `GET /api/rules/coverage`.
+
+## Projeção para frente nas linhas "Repor" (Etapa 16.6)
+
+A projeção de estoque do parceiro ([cálculos](calculations.md#51-projeção-de-estoque-no-parceiro-partner_stock_projectionpy)) entra como evidência nas linhas com sell-out suficiente (`forward_projection`): dias até o estoque acabar se a empresa parar de enviar, quantidade para fechar o próximo mês com 30 dias e o erro medido do sell-out (WAPE de 26%). As 11 linhas "Repor" da base ganham três evidências e uma quantidade sugerida, **sempre estimada**. Não é autorização de envio e exige revisão humana.
+
+## Avisos entre fontes (Etapa 16.1)
+
+O sell-in dos parceiros KA é muito maior que o faturado registrado para eles (5 KAs acima da razão 1,25; KA-05 em 6,88 vezes), e o faturamento por cliente é quase proporcional entre clientes (participação entre 0,92 e 1,03 da mediana). Por isso o sistema usa Sell_In e Sell_Out para o parceiro e `Vendas_24m` para o total do SKU, e **não** usa o faturamento por cliente como peso estratégico ou padrão por parceiro. Os avisos `SELLIN_BILLING_DIVERGENCE` e `BILLING_UNIFORM_SPLIT` aparecem em Dados da planilha.
 
 ## Decisões por parceiro
 

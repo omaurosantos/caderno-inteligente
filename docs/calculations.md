@@ -30,6 +30,19 @@ Todos os cálculos são determinísticos, partem da planilha somente leitura e m
 
 Seis regras saem dos indicadores e cinco do plano datado (falta projetada, OP de produto em descontinuação, excesso projetado, falta de capacidade e estoque acumulando no parceiro). O score é a soma dos pesos configurados dos sinais ativos. Detalhes em [regras](rules.md) e [priorização](prioritization.md).
 
+Desde a Etapa 16.3, a ordem da fila **não** é mais o score: é faixa de urgência ↑, depois valor em risco ponderado ↓, depois score ↓, depois SKU (`impact.py` e `prioritization.prioritize`):
+
+```text
+valor_ponderado = value_at_risk.observed + estimated_weight × value_at_risk.estimated      # estimated_weight = 0,5
+observed  = Σ (unidades sem cobertura na data prometida, depois da alocação) × preço vigente
+estimated = falta projetada só na previsão, até o fim da cobertura × preço
+excess    = valor do estoque excedente ou da redução de OP sugerida (faixa 3)
+faixa 1 = pedido confirmado sem cobertura; 2 = ação de produção em até 4 semanas ou falta só na previsão;
+faixa 3 = rever OP ou excesso; 4 = produzir no horizonte ou monitorar
+```
+
+Produto em descontinuação só conta `observed`. Preço ausente deixa o valor `null`. A curva ABC medida (80% e 95% do faturamento de 12 meses) é exposta, mas não entra na ordem. Parâmetros em `config/prioritization_impact.json`.
+
 ## 3. Previsão de demanda (`official_forecast.py`, motor v2 desde a Etapa 15.1)
 
 - **Série:** faturamento mensal por SKU (`Vendas_24m`), com meses sem venda preenchidos com zero entre o primeiro e o último mês observado.
@@ -106,15 +119,73 @@ variação anual = últimos 3 meses ÷ os mesmos 3 meses do ano anterior − 1
 Camada derivada: não recalcula nada, só lê o que já existe. Limiares em `config/challenge_actions.json`.
 
 ```text
-Priorizar produção = ação produzir* E (posição ≤ 10 na fila de atenção OU decisão de evento no horizonte em até 30 dias)
-Priorizar parceiro = parceiro com ≥ 2 pares Repor E ≥ 1 deles em SKU entre os 10 primeiros da fila
+Priorizar parceiro (SKU)  = pedido sem cobertura disputado por ≥ 2 clientes distintos (alavanca "alocar")
+Priorizar parceiro (parceiro) = parceiro com ≥ 2 pares Repor E ≥ 1 deles em SKU entre os 10 primeiros da fila
+Priorizar produção = alavanca real de produção: antecipar OP, garantir quantidade para pedido sem cobertura,
+                     produzir urgente na faixa 1 de urgência, ou decisão de evento em até 30 dias
 Recomendar recompra = ação comercial "monitorar" E sell-out recente positivo E ≥ 3 meses de sell-in
                       E meses sem sell-in ≥ max(2, 2 × intervalo típico entre envios do próprio par)
 ```
 
+- **Tabela de decisão por alavanca (Etapa 16.4).** A pergunta é "o que o usuário pode fazer agora?". As linhas operacionais são avaliadas na ordem e a primeira que casa vence; a posição ≤ 10 na fila deixou de promover um SKU a Priorizar produção (a posição não justifica urgência).
+
+  | # | Condição | Rótulo | `lever` |
+  |---|---|---|---|
+  | 1 | previsão com histórico insuficiente | Investigar | `nenhuma` |
+  | 2 | pedido sem cobertura e 2 ou mais clientes disputando | Priorizar parceiro | `alocar` |
+  | 3 | OP não iniciada que pode ser antecipada (produto ativo) | Priorizar produção | `antecipar_op` |
+  | 4 | pedido sem cobertura, produto ativo, ordem urgente de quantidade > 0 | Priorizar produção | `produzir_agora` |
+  | 5 | pedido sem cobertura sem alavanca de produção (quantidade 0 ou descontinuação) | Monitorar ("renegociar") | `renegociar` |
+  | 6 | falta só na previsão (sem pedido afetado): o motivo diz "estimada pela previsão" | Produzir (com ordem urgente) ou Monitorar | `produzir_agora` ou `nenhuma` |
+  | 7 | `rever_op` | Investigar | `rever_op` |
+  | 8 | produzir urgente na faixa 1 ou com decisão de evento na janela | Priorizar produção | `produzir_agora` |
+  | 9 | produzir no horizonte; a próxima liberação cai na janela de decisão (4 semanas) | Produzir | `produzir_futuro` |
+  | 9b | produzir no horizonte; a próxima liberação cai depois da janela | Monitorar ("a liberar em dd/mm") | `produzir_futuro` |
+  | 10 | `monitorar_excesso` | Monitorar | `nenhuma` |
+  | 11 | demais | Sem ação necessária | `nenhuma` |
+
+- **`decide_by`:** data da decisão (liberação da ordem urgente, data prometida do pedido, fim da janela de decisão ou data do evento), nunca anterior à data de planejamento (prazo vencido → "decidir hoje"). Alimenta "Decisões de hoje" (`decide_by` até a referência + 7 dias).
+- **Distribuição na base atual** (50 SKUs): Monitorar 30%, Produzir 26%, Priorizar produção 24%, Priorizar parceiro 10%, Investigar 10%. Nenhum rótulo passa de 30%; o teto exigido era 40%. Descontinuados (CI-0047, CI-0050) nunca saem como Priorizar produção nem Produzir.
 - **Precedência:** dado insuficiente, antigo ou divergente vence tudo e vira "Investigar"; depois, risco/urgência; depois, oportunidade; por último, monitorar.
-- **Sem inferência:** parceiro sem sell-out suficiente nunca recebe "Repor", "Recomendar recompra" ou "Priorizar parceiro". "Ampliar mix" e "Reativar" só saem dos canais diretos, onde a ausência de faturamento é observada.
+- **Sem inferência:** parceiro sem sell-out suficiente nunca recebe "Repor", "Recomendar recompra" ou "Priorizar parceiro". "Ampliar mix" e "Reativar" só saem dos canais diretos, onde a ausência de faturamento é observada; na base atual não há lacuna de faturamento, então não disparam (a explicação está em `/api/rules/coverage`, com os casos VC-14, VC-15 e VC-16 como prova de que a regra funciona). Linhas de canal direto têm ação `canal_direto` (venda observada, sem estoque intermediário), que não é dado insuficiente.
 - **Evidência:** cada rótulo traz os valores usados (posição na fila, cobertura, último sell-in, etc.), as limitações e `requires_human_review`.
+
+### 3.5 Alocação de produto escasso (`allocation.py`)
+
+Responde "quem atender primeiro?" quando o estoque não cobre todos os pedidos. **Exceção D1** em [decisions.md](decisions.md): reparte só dados observados, nunca previsão. Pesos em `config/allocation.json`.
+
+1. **Oferta por SKU:** estoque do CD na referência, mais as OPs abertas na conclusão prevista, mais as ordens planejadas na chegada. São as séries do plano de suprimento; nada é recalculado.
+2. **Demanda:** os pedidos abertos da carteira. A demanda prevista **não** é alocada a clientes.
+3. **Pontuação de cada pedido** (`allocation_score`, cada componente exposto com natureza e motivo):
+
+   | Componente | Natureza | Peso |
+   |---|---|---:|
+   | Urgência (dias até a data prometida; vencido na referência pontua mais) | observado | 3 |
+   | Canal direto (ruptura é venda perdida ao consumidor) | cadastral | 2 |
+   | Cobertura do SKU no parceiro ≤ 30 dias, só com sell-out suficiente | estimado | 2 |
+   | Estoque acumulando no parceiro ou cobertura ≥ 90 dias | estimado | −3 |
+   | Pedido pequeno (atender integral libera mais clientes) | observado | 1 |
+   | Par sem sell-out | ausente | 0 |
+
+   Par sem sell-out nunca ganha ponto de cobertura: o motivo diz "sem dado do parceiro". O faturamento por cliente **não** é peso, porque é um rateio quase uniforme (0,92 a 1,03 da mediana). Na base, o sell-out só existe em 2 dos 22 pedidos afetados, então urgência, canal e tamanho do pedido decidem quase tudo, e o motivo diz isso.
+4. **Algoritmo:** ordena os pedidos do SKU pela pontuação (empate: data prometida, depois código do pedido) e percorre a oferta no tempo. Atende integralmente enquanto couber; o primeiro que não couber recebe o que sobra (`allow_partial`) e o restante na data em que a próxima chegada cobrir. Saída por pedido: `allocated_now`, `allocated_later` (data e OP), `delay_days`, `rank` e `reason`. A soma alocada nunca passa da oferta acumulada em nenhuma data.
+5. **Agregações:** frase de decisão por SKU ("KA-02 recebe 303 un. agora e o restante em 05/10 com a ordem planejada; KA-05 recebe em 05/10"); risco por região (`Parceiros_Canais.Região`; canais diretos são "Nacional", Loja própria é "Sudeste"), cuja soma é o total descoberto; unidades e valor por parceiro.
+6. **Pedido sem data prometida ou SKU sem preço:** valor `null` com o motivo, nunca zero.
+
+Base atual: 17 SKUs com falta, 21 pedidos, 6.626 un. e R$ 401.632,40 sem cobertura na data prometida; 5 SKUs disputados, cada um com ordem de atendimento. O valor `observed` do ranking é o que sobra **depois** desta alocação. É sugestão com `requires_human_review`: não reserva estoque nem altera pedidos.
+
+### 3.6 Visibilidade do consumidor (`visibility.py`)
+
+`journey` em `/api/b2b2c/visibility` mede até onde se vê a venda ao consumidor nos 12 meses (set/2025 a ago/2026):
+
+```text
+observado(canal direto) = faturado do canal                      # o faturamento é a venda ao consumidor
+observado(parceiro KA)  = min(sell-out informado do par, faturado do par)   # limitado ao faturado
+sem visibilidade        = faturado − observado                   # calculado
+participação observada  = observado ÷ faturado total
+```
+
+Base atual: 328.111 un. faturadas, 246.389 com venda observada (**75,1%**) e 81.722 sem visibilidade. Canal direto 100%; varejista 22,5%; distribuidor 19,8%. Sell-out não é venda zero quando ausente. O sell-out de alguns pares KA passa do faturado (sell-in e faturamento não fecham); o excedente é descartado do cálculo e sinalizado em `exceeds_billing`.
 
 ## 4. Plano de suprimento e recomendação operacional (`supply_plan.py`, `recommendations.py`)
 
@@ -163,9 +234,18 @@ As ordens planejadas disputam a `Capacidade disponível` de `Capacidade_Semanal`
 
 1. ordem de atendimento: data de necessidade, depois curva ABC e SKU;
 2. consome na semana de liberação; se faltar, antecipa semana a semana até a data de planejamento (pré-produção);
-3. o que não couber até a necessidade fica sem programação (`insuficiente`); ordem que começaria depois do calendário fica `a_confirmar`.
+3. o que não couber até a necessidade fica sem programação (`insuficiente`).
 
-Premissas: unidades homogêneas por família; consumo na semana de início; compromissos base não validados com a empresa; sem calendário depois de 28/12/2026; antecipar e reduzir OP não mexem na capacidade.
+**Capacidade estimada além do calendário (Etapa 16.5).** O calendário da base termina em 03/01/2027 e o horizonte do plano em 28/02/2027, o que deixava a Volta às Aulas sem avaliação (`a_confirmar` em 37 SKUs). Para cada família, as semanas seguintes ao calendário são geradas até o fim do horizonte com `nature: "estimada"` e `method`:
+
+```text
+central      = capacidade máxima − média de "Compromissos base" das últimas 8 semanas observadas
+conservador  = menor "Capacidade disponível" observada na família (sensibilidade)
+```
+
+Ordem que cabe só na capacidade estimada fica `ok_estimado`; a que não cabe nem nela fica `insuficiente_estimado`. `a_confirmar` sobra apenas com o método desligado (`config/capacity_extension.json → enabled`), que reproduz a saída anterior. `insuficiente_estimado` não gera `CAPACITY_SHORTFALL` nem muda o score. Linha Escolar: o pico segue `insuficiente` por uma falta **observada** em dez/26 (12.970 un. sem programação no cenário central e 13.600 no conservador); as ordens de fev/27 de CI-0014, CI-0016 e CI-0041 ficam `insuficiente_estimado`. A capacidade estimada **não** é capacidade informada pela empresa.
+
+Premissas: unidades homogêneas por família; consumo na semana de início; compromissos base não validados com a empresa; semanas depois de 28/12/2026 são estimadas; antecipar e reduzir OP não mexem na capacidade.
 
 ### 4.2 Produção planejada por mês (`production_plan.py`)
 
@@ -200,6 +280,8 @@ Usa apenas chaves reais parceiro–SKU–mês. O estoque considerado é o estoqu
 
 Janela de acúmulo (Etapa 15.5, 6 meses): `sell-through = sell-out ÷ sell-in`, estoque inicial (mês anterior à janela) → final e a conta `estoque(t) = estoque(t−1) + sell-in(t) − sell-out(t)` conferida mês a mês. O sinal de acúmulo do parceiro sobe para o SKU (regra `PARTNER_STOCK_BUILDUP`) sem distribuir o estoque do CD.
 
+Linhas de canal direto (`row_kind = "direct"`, Etapa 16.1) não passam por essa lógica: a venda observada vem de `Vendas_24m`, o estoque estimado é `null` ("sem estoque intermediário") e a ação é `canal_direto`. Nas linhas de parceiro com sell-out suficiente, a projeção para frente da seção 5.1 entra como evidência (`forward_projection`).
+
 Sinais, limiares e precedência das ações estão em [regras comerciais](commercial-rules.md).
 
 ### 5.1 Projeção de estoque no parceiro (`partner_stock_projection.py`, sem tela)
@@ -208,6 +290,7 @@ Sinais, limiares e precedência das ações estão em [regras comerciais](commer
 - **Sell-out previsto:** média dos últimos 6 meses do par. Foi a janela de menor erro entre último mês, 3 e 6 meses (origens fev a mai/2026, 3 meses à frente): sell-out 32,7% / 28,0% / 26,4% e sell-in 35,4% / 29,7% / 28,2%.
 - **Cenários:** com reposição (sell-in igual à média de 6 meses) e sem reposição (sell-in zero). O segundo não depende de prever sell-in.
 - **Saídas:** estoque projetado nos 3 meses seguintes ao último mês observado, mês de ruptura (primeiro mês com estoque ≤ 0), cobertura em dias (`estoque ÷ sell-out previsto/30`) e reposição até a cobertura-alvo de 30 dias ao fim do próximo mês.
+- **Uso nas recomendações (Etapa 16.6):** dias até acabar sem reposição, quantidade para fechar o próximo mês com 30 dias e o WAPE de 26% entram como evidência nas linhas "Repor" (`forward_projection`), sempre estimados. A rota `/api/partner-stock-projection` continua como detalhe.
 - **Limites:** 12 meses por par não permitem captar sazonalidade; só os 50 pares com sell-out (20% dos possíveis) têm projeção.
 
 ## 6. Central de validação (`validation_center.py`)
@@ -218,7 +301,10 @@ Sinais, limiares e precedência das ações estão em [regras comerciais](commer
 - **WAPE ponderado:** `Σ erros absolutos / Σ demanda real` somando os SKUs com demanda no holdout.
 - **Casos congelados:** comparam a saída obtida pelas mesmas funções de regras, previsão, plano, capacidade e recomendação com a saída esperada registrada em `config/validation_center.json`. Um caso com `pending_until` fica listado como pendente e não conta como aprovado nem reprovado (usado no protocolo da Etapa 15; hoje nenhum está pendente).
 - **Comportamento seguro:** além das checagens anteriores, nenhuma falta projetada aparece como "Sem ação necessária" e toda ordem planejada respeita o lote mínimo.
-- **Tempo de análise:** soma, média e mediana dos minutos informados nas decisões. Antes de 20 registros, não há comparação com a linha de base.
+- **Tempo de análise:** soma, média e mediana dos minutos informados nas decisões. Antes de 20 registros, não há comparação com a linha de base. Desde a Etapa 16.7, o frontend mede o tempo entre abrir o detalhe do SKU e registrar a decisão e preenche o campo (editável). Hoje há 0 registros: nenhum ganho de processo é afirmado.
+- **Valor em risco endereçado:** soma de `value_at_risk.observed` dos SKUs com decisão registrada. Natureza observada; não é dinheiro recuperado. Sem decisões, é R$ 0 (soma vazia).
+- **Modelo × S&OP:** para os meses em comum (out a dez/26), lista os SKUs em que o modelo e o `Forecast_Comercial` divergem mais de 20% (52 divergências em 32 SKUs). É pauta de revisão: o erro do S&OP não é mensurável, porque a base só traz meses futuros.
+- **Casos congelados:** 34 de 34 passam (VC-31 a VC-34 liberados na Etapa 16; VC-07, VC-10, VC-20 e VC-29 revistos com registro).
 
 ## 7. Comparação entre execuções (`run_comparison.py`)
 

@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from .forecast_candidates import CANDIDATES, LEVEL_MONTHS, SEASONAL_LEVEL_MIN_HISTORY
+from .forecast_candidates import CANDIDATES, LEVEL_MONTHS, SEASONAL_LEVEL_MIN_HISTORY, describe_seasonal_level
 from .official_forecast import ENGINE_LABELS, MINIMUM_HISTORY_MONTHS, V2_LIMITATION, chain_windows, ratio, window_errors
 
 TARGET = {
@@ -73,7 +73,7 @@ def build_model_card(series_map: dict[str, pd.Series], forecasts: pd.DataFrame, 
         "target": TARGET,
         "horizon_months": config["official"]["horizon_months"] if engine == "v2" else 3,
         "models": [
-            {"model": code, "label": CANDIDATES[code].label, "description": CANDIDATES[code].description,
+            {"model": code, "label": CANDIDATES[code].label, "description": describe_seasonal_level(tuple(config["seasonal_level"]["ratio_bounds"])) if code == "seasonal_level" else CANDIDATES[code].description,
              "min_history_months": SEASONAL_LEVEL_MIN_HISTORY if code == "seasonal_level" else CANDIDATES[code].min_history,
              "skus": used.get(code, 0)}
             for code in chain

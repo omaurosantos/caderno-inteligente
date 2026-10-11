@@ -184,3 +184,9 @@ def test_v1_engine_is_identical_to_the_14_0_snapshot():
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))["forecasts"]
 
     assert current == snapshot
+
+
+def test_seasonal_level_description_follows_the_informed_ratio_bounds():
+    assert "0,5–3,0" in fc.describe_seasonal_level((0.5, 3.0))
+    assert "0,5–2,0" in fc.describe_seasonal_level((0.5, 2.0))
+    assert "0,5–2,0" in fc.CANDIDATES["seasonal_level"].description  # padrão do candidato, não da configuração

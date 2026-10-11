@@ -41,7 +41,7 @@ def test_tampered_foreign_or_unsigned_tokens_are_rejected():
     for candidate in (
         f"{header}.{forged_claims}.{signature}",
         f"{_b64({'alg': 'none', 'typ': 'JWT'})}.{claims}.",
-        token[:-2] + "xx",
+        f"{header}.{claims}.{signature[:5]}{'A' if signature[5] != 'A' else 'B'}{signature[6:]}",
         "nao-e-token",
     ):
         with pytest.raises(InvalidToken):
