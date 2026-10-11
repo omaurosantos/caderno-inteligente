@@ -1,13 +1,28 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SKU_OK, sessionUser, system } from './fixtures';
 import { fail, mockApi, renderApp } from './utils';
 
 const banco = { system: { ...system, data_source: 'banco' } };
 const SESSION_KEY = 'caderno-inteligente.sessao';
 const signedIn = () => window.localStorage.setItem(SESSION_KEY, JSON.stringify({ token: 'token-salvo', expiresAt: 4_102_444_800, user: sessionUser }));
+
+// Node recente expõe um `localStorage` global experimental que, sem --localstorage-file, vale undefined e
+// esconde o do jsdom; um Storage em memória deixa o teste independente da versão do Node.
+beforeEach(() => {
+  const data = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => { data.set(key, String(value)); },
+      removeItem: (key: string) => { data.delete(key); },
+      clear: () => data.clear(),
+    },
+  });
+});
 
 afterEach(() => window.localStorage.clear());
 
