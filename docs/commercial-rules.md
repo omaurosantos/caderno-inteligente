@@ -88,6 +88,15 @@ As 23 linhas KA com carteira e sem sell-out suficiente continuam `dados_insufici
 
 A projeção de estoque do parceiro ([cálculos](calculations.md#51-projeção-de-estoque-no-parceiro-partner_stock_projectionpy)) entra como evidência nas linhas com sell-out suficiente (`forward_projection`): dias até o estoque acabar se a empresa parar de enviar, quantidade para fechar o próximo mês com 30 dias e o erro medido do sell-out (WAPE de 26%). As 11 linhas "Repor" da base ganham três evidências e uma quantidade sugerida, **sempre estimada**. Não é autorização de envio e exige revisão humana.
 
+## Restrição do CD nas linhas "Repor"
+
+"Repor" olha o parceiro: giro bom e pouco estoque estimado. Sozinho, não diz se o CD tem o produto para mandar. Por isso, todo rótulo comercial traz `operational_constraint` (`null` sem restrição), calculado só para "Repor":
+
+- **bloqueada** (observado): a alocação mostra pedido confirmado do SKU sem cobertura na data prometida. O motivo diz quantas unidades, de quais clientes e até quando. Na base: KA-01 · CI-0011, KA-02 · CI-0027 e KA-04 · CI-0020;
+- **restrita** (estimado): o plano de suprimento projeta falta no CD antes de a primeira produção nova chegar (`early_shortfall`). Na base: KA-01 · CI-0014 e KA-02 · CI-0015.
+
+O rótulo continua "Repor"; a restrição entra como evidência ("Restrição no CD"), como sinal `CD_CONSTRAINT` e no motivo. Na tela, a linha mostra "CD sem estoque" ou "CD em risco". Responde à pergunta do desafio "onde uma oportunidade comercial não pode ser executada por alguma restrição operacional?".
+
 ## Avisos entre fontes (Etapa 16.1)
 
 O sell-in dos parceiros KA é muito maior que o faturado registrado para eles (5 KAs acima da razão 1,25; KA-05 em 6,88 vezes), e o faturamento por cliente é quase proporcional entre clientes (participação entre 0,92 e 1,03 da mediana). Por isso o sistema usa Sell_In e Sell_Out para o parceiro e `Vendas_24m` para o total do SKU, e **não** usa o faturamento por cliente como peso estratégico ou padrão por parceiro. Os avisos `SELLIN_BILLING_DIVERGENCE` e `BILLING_UNIFORM_SPLIT` aparecem em Dados da planilha.

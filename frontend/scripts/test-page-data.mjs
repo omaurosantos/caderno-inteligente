@@ -4,11 +4,14 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import ts from 'typescript';
 
+const options = { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } };
+const dataUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+// api.ts importa a sessão de login; uma URL data: não resolve import relativo, então a sessão vai compilada à parte.
+const session = ts.transpileModule(await readFile(new URL('../src/session.ts', import.meta.url), 'utf8'), options).outputText;
 const source = await readFile(new URL('../src/api.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source.replace('import.meta.env.VITE_API_URL', 'undefined'), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
-}).outputText;
-const { loadPageData, api } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const compiled = ts.transpileModule(source.replace('import.meta.env.VITE_API_URL', 'undefined'), options).outputText
+  .replaceAll("'./session'", JSON.stringify(dataUrl(session)));
+const { loadPageData, api } = await import(dataUrl(compiled));
 
 async function mockedFetch(handler, run) {
   const original = globalThis.fetch;

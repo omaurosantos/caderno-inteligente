@@ -431,6 +431,45 @@ def label_commercial_row(row: dict[str, Any], settings: dict[str, Any]) -> dict[
     return _result("monitorar", "commercial", action, [signal["code"] for signal in row.get("signals", [])], evidence, "Dados suficientes, sem exceção; acompanhar o estoque do parceiro sem afirmar excesso.")
 
 
+def _br_date(value: str | None) -> str | None:
+    return None if not value else f"{value[8:10]}/{value[5:7]}"
+
+
+def operational_constraint(plan: dict[str, Any] | None, allocation_sku: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Restrição do CD para uma oportunidade "Repor": o SKU não tem estoque para mais um envio. None quando não há restrição.
+
+    `bloqueada` (observado): pedido confirmado já sem cobertura na data prometida, pela alocação.
+    `restrita` (estimado): o plano projeta falta no CD antes de a primeira produção nova chegar.
+    """
+    if allocation_sku and allocation_sku.get("has_shortfall"):
+        short = [order for order in allocation_sku.get("orders", []) if (order.get("uncovered_at_promise") or 0) > 0]
+        units = sum(order["uncovered_at_promise"] for order in short)
+        clients = sorted({order["client"] for order in short})
+        until = max((order["expected_date"] for order in short if order.get("expected_date")), default=None)
+        return {"status": "bloqueada", "nature": "observado", "uncovered_units": units, "clients": clients, "until": until,
+                "summary": f"{units:g} un. de pedidos confirmados sem cobertura até {_br_date(until) or 'data sem previsão'}",
+                "reason": f"O CD já não cobre pedidos confirmados deste SKU ({units:g} un. de {', '.join(clients)}) até "
+                          f"{_br_date(until) or 'data sem previsão'}; novo envio só depois disso."}
+    if plan and plan.get("early_shortfall") and plan.get("first_shortfall_date"):
+        arrival = plan.get("earliest_arrival")
+        return {"status": "restrita", "nature": "estimado", "uncovered_units": None, "clients": [], "until": arrival,
+                "summary": f"falta projetada a partir de {_br_date(plan['first_shortfall_date'])}, antes da produção nova",
+                "reason": f"Falta projetada no CD a partir de {_br_date(plan['first_shortfall_date'])}, antes de a produção nova chegar"
+                          f"{f' ({_br_date(arrival)})' if arrival else ''}; confirmar estoque antes de prometer."}
+    return None
+
+
+def apply_operational_constraint(action: dict[str, Any], constraint: dict[str, Any] | None) -> dict[str, Any]:
+    """Anexa a restrição do CD ao rótulo comercial (campo sempre presente; None sem restrição). O código do rótulo não muda."""
+    action["operational_constraint"] = constraint
+    if constraint:
+        origin = "Alocação de pedidos confirmados" if constraint["status"] == "bloqueada" else "Plano de suprimento, estimado"
+        action["evidence"] = [*action["evidence"], _ev("Restrição no CD", constraint["summary"], origin)]
+        action["signals_used"] = [*action["signals_used"], "CD_CONSTRAINT"]
+        action["reason"] = f"{action['reason']} Restrição operacional: {constraint['reason']}"
+    return action
+
+
 def label_partner(summary: dict[str, Any], rows: list[dict[str, Any]], priority_by_sku: dict[str, int | None], settings: dict[str, Any],
                   allocation_partner: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """`rows` são as linhas do parceiro já com `challenge_action`. Só rotula 'Priorizar parceiro'; os demais ficam sem rótulo no nível do parceiro.

@@ -27,10 +27,13 @@ const overviewPanelStub = dataUrl('export const OverviewKpis = () => null; expor
 const projectedChartStub = dataUrl('export const ProjectedStockChart = () => null;');
 // "Decisões de hoje" (Etapa 16.4) tem testes próprios no Vitest.
 const decisionsTodayStub = dataUrl('export const DecisionsToday = () => null;');
+// Caminho do Início e mapa de regiões buscam a API sozinhos: cobertos pelo Vitest.
+const journeyStripStub = dataUrl('export const JourneyStrip = () => null;');
+const regionMapStub = dataUrl('export const RegionMap = () => null;');
 // O Início lê o faturamento uma vez para os blocos (stubados acima); aqui a leitura não acontece.
 const apiStub = dataUrl('export const api = {};');
 const resourceStub = dataUrl("export const useApiResource = () => ({ data: undefined, error: '', loading: true, refresh: async () => {} });");
-const { default: OverviewPage } = await import(await compile('../src/pages/OverviewPage.tsx', { '../components': componentsUrl, './shared': sharedUrl, '../api': apiStub, '../hooks/useApiResource': resourceStub, '../components/OverviewPanel': overviewPanelStub, '../components/ProjectedStockChart': projectedChartStub, '../components/DecisionsToday': decisionsTodayStub }));
+const { default: OverviewPage } = await import(await compile('../src/pages/OverviewPage.tsx', { '../components': componentsUrl, './shared': sharedUrl, '../api': apiStub, '../hooks/useApiResource': resourceStub, '../components/OverviewPanel': overviewPanelStub, '../components/ProjectedStockChart': projectedChartStub, '../components/DecisionsToday': decisionsTodayStub, '../components/JourneyStrip': journeyStripStub, '../components/RegionMap': regionMapStub }));
 const { AttentionFocus } = await import(await compile('../src/components/AttentionFocus.tsx', { '../components': componentsUrl, '../pages/shared': sharedUrl }));
 const render = element => renderToStaticMarkup(element);
 
@@ -45,7 +48,7 @@ const fixture = {
 };
 test('overview is the panel only: the queue card, rupture, events and opportunities left the page', () => {
   const html = render(React.createElement(MemoryRouter, null, React.createElement(OverviewPage, { data: fixture, onSelect() {}, refreshToken: 0 })));
-  assert.ok(html.includes('Indicadores'));
+  assert.ok(html.includes('O que olho primeiro?'));
   for (const gone of ['Primeiro da fila', 'Indicadores de ruptura', 'SKUs com risco de ruptura', 'Abrir evidências de']) assert.ok(!html.includes(gone), gone);
 });
 test('queue card (Planejamento) preserves returned priority and has a single action', () => {
@@ -85,7 +88,7 @@ test('alerts and tooltips expose consistent accessibility semantics', () => {
 });
 
 // O selo de rótulo é coberto pelo Vitest; aqui só se renderiza o conteúdo próprio da matriz.
-const challengeBadgeStub = dataUrl('export const ChallengeBadge = () => null;');
+const challengeBadgeStub = dataUrl('export const ChallengeBadge = () => null; export const ConstraintBadge = () => null;');
 const { CommercialMatrix } = await import(await compile('../src/components/CommercialMatrix.tsx', { '../components': componentsUrl, '../pages/shared': sharedUrl, './ChallengeAction': challengeBadgeStub, '../hooks/useMediaQuery': mediaQueryUrl }));
 test('commercial view keeps null separate from observed zero and names its real key', () => {
   const row = {

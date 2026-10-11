@@ -213,6 +213,7 @@ Campos aditivos da Etapa 16:
 
 - `row_kind` (`partner` ou `direct`), `visibility_source` e `stock_reason`. As 22 linhas de canal direto têm `action = "canal_direto"`, `data_quality = "sufficient"`, `data_nature = "Observado (faturamento direto)"`, `estimated_stock = null` e `stock_reason = "Sem estoque intermediário: o estoque que atende o canal é o do CD"`. Não são dado insuficiente;
 - `forward_projection` (linhas de parceiro com sell-out suficiente): `days_until_stockout_without_replenishment`, `replenishment_to_target` (quantidade para fechar o próximo mês com 30 dias), `sell_out_wape`, `status`, `reason` e `nature = "estimado"`, mais `forward_projection_reason` quando ausente. As 11 linhas "Repor" da base trazem três evidências (dias até acabar, quantidade para 30 dias, WAPE de 26%). Vem de `partner_stock_projection.py`;
+- `challenge_action.operational_constraint` em todo rótulo comercial (`null` sem restrição): nas linhas "Repor" cujo SKU não tem estoque no CD, `status` (`bloqueada`: pedido confirmado sem cobertura, observado; `restrita`: falta projetada antes da produção nova, estimado), `nature`, `uncovered_units`, `clients`, `until`, `summary` (a evidência curta) e `reason`. Veja [regras comerciais](commercial-rules.md#restrição-do-cd-nas-linhas-repor);
 - as 23 linhas KA com carteira e sem sell-out suficiente continuam `dados_insuficientes` e saem como Investigar com o sinal `SELL_OUT_REQUEST` em `challenge_action.signals_used`: "pedir ao parceiro o sell-out deste SKU antes de decidir".
 
 ## `GET /api/feedback` e `POST /api/feedback`

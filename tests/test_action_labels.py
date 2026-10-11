@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 import backend.main as main
 from caderno_inteligente.action_labels import (
-    CHALLENGE_PDF_CODES, DEFAULT_SETTINGS, DEFINITIONS, LABELS, PRECEDENCE, label_channel_row, label_commercial_row, label_operational,
-    label_partner, load_action_settings, recompra_signal,
+    CHALLENGE_PDF_CODES, DEFAULT_SETTINGS, DEFINITIONS, LABELS, PRECEDENCE, apply_operational_constraint, label_channel_row, label_commercial_row,
+    label_operational, label_partner, load_action_settings, operational_constraint, recompra_signal,
 )
 from caderno_inteligente.feedback import init_feedback_db, list_feedback, list_feedback_records, save_feedback
 
@@ -155,6 +155,30 @@ def test_every_label_has_at_least_one_frozen_case():
     assert covered == set(LABELS)
 
 
+# --- restrição do CD no "Repor" ------------------------------------------------
+
+def test_operational_constraint_blocks_when_confirmed_orders_are_uncovered_and_restricts_on_projected_shortfall():
+    allocation = {"has_shortfall": True, "orders": [{"client": "KA-01", "uncovered_at_promise": 0.0, "expected_date": "2026-09-14"},
+                                                    {"client": "KA-05", "uncovered_at_promise": 273.0, "expected_date": "2026-09-30"}]}
+    blocked = operational_constraint({"early_shortfall": True, "first_shortfall_date": "2026-09-16"}, allocation)
+    assert blocked["status"] == "bloqueada" and blocked["nature"] == "observado" and blocked["clients"] == ["KA-05"]
+    assert blocked["uncovered_units"] == 273 and blocked["until"] == "2026-09-30" and "30/09" in blocked["reason"]
+    restricted = operational_constraint({"early_shortfall": True, "first_shortfall_date": "2026-10-04", "earliest_arrival": "2026-10-05"}, {"has_shortfall": False})
+    assert restricted["status"] == "restrita" and restricted["nature"] == "estimado" and "04/10" in restricted["reason"]
+    assert operational_constraint({"early_shortfall": False, "first_shortfall_date": "2026-11-18"}, None) is None
+    assert operational_constraint(None, None) is None
+
+
+def test_constraint_keeps_the_label_and_adds_evidence():
+    label = label_commercial_row(_row("avaliar_reposicao", coverage_days=20), S)
+    plain = apply_operational_constraint(dict(label), None)
+    assert plain["operational_constraint"] is None and plain["evidence"] == label["evidence"]
+    constraint = {"status": "restrita", "nature": "estimado", "summary": "falta projetada", "reason": "Falta projetada no CD."}
+    flagged = apply_operational_constraint(dict(label), constraint)
+    assert flagged["code"] == "repor" and flagged["operational_constraint"] is constraint and "CD_CONSTRAINT" in flagged["signals_used"]
+    assert flagged["evidence"][-1] == {"label": "Restrição no CD", "value": "falta projetada", "origin": "Plano de suprimento, estimado"} and "Restrição operacional" in flagged["reason"]
+
+
 # --- API sobre a base real ---------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -195,6 +219,15 @@ def test_api_sku_detail_label_matches_the_list(client):
     # Etapa 16.4: CI-0049 tem pedidos sem cobertura disputados por 2 ou mais clientes → a decisão é quem atender (linha 2)
     assert detail["challenge_action"] == listed["challenge_action"] and detail["challenge_action"]["code"] == "priorizar_parceiro"
     assert detail["challenge_action"]["lever"] == "alocar"
+
+
+def test_api_repor_rows_flag_the_cd_constraint(client):
+    items = client.get("/api/commercial-recommendations?limit=500").json()["items"]
+    repor = {(row["partner"], row["sku"]): row["challenge_action"]["operational_constraint"] for row in items if row["challenge_action"]["code"] == "repor"}
+    # Base real: CI-0011, CI-0027 e CI-0020 têm pedido confirmado sem cobertura; CI-0014 e CI-0015, falta projetada antes da produção nova.
+    assert {key for key, value in repor.items() if value and value["status"] == "bloqueada"} == {("KA-01", "CI-0011"), ("KA-02", "CI-0027"), ("KA-04", "CI-0020")}
+    assert {key for key, value in repor.items() if value and value["status"] == "restrita"} == {("KA-01", "CI-0014"), ("KA-02", "CI-0015")}
+    assert all("operational_constraint" in row["challenge_action"] for row in items if row["challenge_action"]["source"] == "commercial")
 
 
 def test_api_commercial_rows_partners_and_filters(client):

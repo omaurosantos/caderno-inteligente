@@ -372,7 +372,10 @@ export const commercialRow: CommercialRow = {
   action_label: 'Sem recomendação por dados insuficientes', requires_human_review: true, recommendation_reason: 'Sem estoque estimado.',
   buildup_window_months: 6, sell_through_window: null, stock_start: null, stock_growth: null, stock_identity_consistent: null,
   periods: [{ month: '2026-08', sell_in_quantity: 30, sell_out_quantity: 0, estimated_stock: null, data_nature: 'Real' }],
-  challenge_action: challenge('repor', 'Repor', 'commercial', 'Cobertura estimada baixa para o giro observado; avaliar reposição.', 'avaliar_reposicao'),
+  challenge_action: {
+    ...challenge('repor', 'Repor', 'commercial', 'Cobertura estimada baixa para o giro observado; avaliar reposição.', 'avaliar_reposicao'),
+    operational_constraint: { status: 'bloqueada', nature: 'observado', uncovered_units: 273, clients: ['KA-05'], until: '2026-09-30', summary: '273 un. de pedidos confirmados sem cobertura até 30/09', reason: 'O CD já não cobre pedidos confirmados deste SKU (273 un. de KA-05) até 30/09; novo envio só depois disso.' },
+  },
   row_kind: 'partner', visibility_source: 'sell_out_parceiro', stock_reason: null, forward_projection: null,
   forward_projection_reason: 'Projeção do estoque do parceiro indisponível nesta execução.',
 };

@@ -31,3 +31,10 @@ export function ChallengeLever({ action }: { action?: ChallengeAction | null }) 
   return <p className="answer-why">Decisão: <strong>{lever}</strong>{action.decide_by ? <> · decidir até <strong>{formatDate(action.decide_by)}</strong></> : ''}
     {action.decide_by_reason && <Tooltip label="Por que este prazo">{action.decide_by_reason}. Sugestão para revisão humana.</Tooltip>}</p>;
 }
+
+/** Aviso de que o CD não tem o produto para o "Repor" (pedido confirmado sem cobertura ou falta projetada). Sem restrição, nada. */
+export function ConstraintBadge({ action }: { action?: ChallengeAction | null }) {
+  const constraint = action?.operational_constraint;
+  if (!constraint) return null;
+  return <><Badge tone={constraint.status === 'bloqueada' ? 'critical' : 'medium'}>{constraint.status === 'bloqueada' ? 'CD sem estoque' : 'CD em risco'}</Badge><Tooltip label="Restrição operacional">{constraint.reason} Dado {constraint.nature}. Revisão humana obrigatória.</Tooltip></>;
+}

@@ -29,7 +29,9 @@ from caderno_inteligente.feedback import (  # noqa: E402
 )
 from caderno_inteligente.forecast_engine_config import load_engine_config  # noqa: E402
 from caderno_inteligente.official_forecast import build_official_forecasts  # noqa: E402
-from caderno_inteligente.action_labels import label_commercial_row, label_operational, label_partner, load_action_settings  # noqa: E402
+from caderno_inteligente.action_labels import (  # noqa: E402
+    apply_operational_constraint, label_commercial_row, label_operational, label_partner, load_action_settings, operational_constraint,
+)
 from caderno_inteligente.events import build_event_analysis, load_event_settings  # noqa: E402
 from caderno_inteligente.revenue import build_revenue_forecasts  # noqa: E402
 from caderno_inteligente.indicators import build_sku_indicators, registered_demand_warning  # noqa: E402
@@ -638,6 +640,12 @@ def _enrich_challenge(result: dict) -> dict:
             row["challenge_action"] = label_channel_row(match) if match is not None else label_commercial_row(row, settings)
         else:
             row["challenge_action"] = label_commercial_row(row, settings)
+        if row["challenge_action"].get("source") == "commercial":
+            # "Repor" só vale se o CD tiver o produto: falta em pedido confirmado (alocação) ou projetada (plano) vira restrição.
+            constraint = None
+            if row["challenge_action"]["code"] == "repor":
+                constraint = operational_constraint(supply_plans().get(row["sku"]), (allocation_result or {"skus": {}})["skus"].get(row["sku"]))
+            apply_operational_constraint(row["challenge_action"], constraint)
         by_partner.setdefault(row["partner"], []).append(row)
     for summary in result["partners"]:
         summary["challenge_action"] = label_partner(summary, by_partner.get(summary["code"], []), priority_by_sku, settings,

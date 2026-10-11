@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { MOBILE_LIST_QUERY, useMediaQuery } from '../hooks/useMediaQuery';
 import { Link } from 'react-router-dom';
 import { Badge, EmptyState, Hint, SectionCard } from '../components';
-import { ChallengeBadge } from './ChallengeAction';
+import { ChallengeBadge, ConstraintBadge } from './ChallengeAction';
 import type { ChallengeAction } from '../types-actions';
 import type { CommercialPage, CommercialRow, ForwardProjection } from '../types-commercial';
 import { displayDays, displayNumber, displayShare, displayUnits, formatDate, localizeText } from '../pages/shared';
@@ -92,6 +92,7 @@ function Evidence({ row }: { row: CommercialRow }) {
     <div className="table-shell" tabIndex={0} role="region" aria-label={`Origem mensal de ${row.partner} e ${row.sku}`}><table className="data-table"><caption>Origem: Sell_In e Sell_Out · {row.partner} · {row.sku}</caption><thead><tr><th>Mês</th><th>Enviado</th><th>Vendido</th><th>Estoque estimado</th></tr></thead><tbody>{row.periods.map(period => <tr key={period.month}><td>{monthLabel(period.month)}</td><td>{displayNumber(period.sell_in_quantity)}</td><td>{displayNumber(period.sell_out_quantity)}</td><td>{displayNumber(period.estimated_stock)}</td></tr>)}</tbody></table></div>
     {projection && <p><strong>Projeção (estimada):</strong> {projection.days_until_stockout_without_replenishment !== null && `o estoque acaba em cerca de ${displayDays(projection.days_until_stockout_without_replenishment)} sem reposição; `}{projection.replenishment_to_target !== null && `para a cobertura-alvo, repor ${displayUnits(projection.replenishment_to_target)}; `}{projection.sell_out_wape !== null && `erro do sell-out ${displayShare(projection.sell_out_wape)}. `}Sugestão estimada: não autoriza envio.</p>}
     {!projection && row.action === 'avaliar_reposicao' && row.forward_projection_reason && <p><strong>Projeção:</strong> {row.forward_projection_reason}</p>}
+    {row.challenge_action?.operational_constraint && <p><strong>Restrição operacional:</strong> {row.challenge_action.operational_constraint.reason}</p>}
     {needsSellOut(row) && <p><strong>Pedir sell-out ao parceiro:</strong> {displayUnits(row.backlog_quantity)} em pedidos sem cobertura e nenhum dado de venda do parceiro.</p>}
     {row.challenge_action && <p><strong>Rótulo {row.challenge_action.label}:</strong> {row.challenge_action.evidence.filter((item) => item.value !== null).map((item) => `${item.label}: ${typeof item.value === 'number' ? displayNumber(item.value) : item.value}`).join('; ') || row.challenge_action.reason}.</p>}
     {row.orders.length > 0 && <ul className="plain-list">{row.orders.map(order => <li key={order.order}>Pedido {order.order}: {displayUnits(order.quantity)}, prometido para {order.promised_date ? formatDate(order.promised_date) : 'data ausente'} ({order.status}).</li>)}</ul>}
@@ -119,12 +120,13 @@ export function OpportunityCard({ row, uniform, hideLabel, expanded, onToggle }:
       <Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link>
       <span><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link> <small>{row.product}</small></span>
     </div>
-    {(!uniform || row.data_quality !== 'sufficient' || needsSellOut(row) || (!hideLabel && row.challenge_action)) && <div className="opp-flags">
+    {(!uniform || row.data_quality !== 'sufficient' || needsSellOut(row) || (!hideLabel && row.challenge_action) || row.challenge_action?.operational_constraint) && <div className="opp-flags">
       {!uniform && <strong className="commercial-action">{row.action_label}</strong>}
       {row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}
       <BuildupBadge row={row} />
       <SellOutBadge row={row} />
       {!hideLabel && <ChallengeBadge action={row.challenge_action} />}
+      <ConstraintBadge action={row.challenge_action} />
     </div>}
     <Stats row={row} />
     <button type="button" className="secondary-button evidence-toggle" aria-expanded={expanded} aria-label={`Evidências de ${row.partner} · ${row.sku} — ${row.action_label}`} onClick={onToggle}>{expanded ? 'Ocultar evidências' : 'Ver evidências'}</button>
@@ -154,7 +156,7 @@ export function CommercialMatrix({ response }: { response: CommercialPage<Commer
         const expanded = isOpen(key);
         return [
           <tr key={key} className={expanded ? 'is-expanded' : ''}>
-            <td data-label="Parceiro / SKU"><Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link><br /><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link><small>{row.product}</small>{!shared && <ChallengeBadge action={row.challenge_action} />}</td>
+            <td data-label="Parceiro / SKU"><Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link><br /><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link><small>{row.product}</small>{!shared && <ChallengeBadge action={row.challenge_action} />}<ConstraintBadge action={row.challenge_action} /></td>
             {!uniform && <td className="cell-stack" data-label="Ação comercial"><strong className="commercial-action">{row.action_label}</strong>{row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}<BuildupBadge row={row} /><SellOutBadge row={row} /></td>}
             <td className="num" data-label="Estoque estimado">{stockCell(row)}<ReplenishNote row={row} /></td>
             <td className="num" data-label="Cobertura de estoque">{coverageCell(row)}</td>

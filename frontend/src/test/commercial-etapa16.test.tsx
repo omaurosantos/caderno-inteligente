@@ -133,3 +133,17 @@ describe('detalhe do parceiro', () => {
     expect(await screen.findByText('Venda direta observada', { selector: '.commercial-action' })).toBeInTheDocument();
   });
 });
+
+describe('Repor com restrição no CD', () => {
+  it('avisa no "Repor" quando o CD não cobre pedidos confirmados e mostra o motivo na evidência', () => {
+    matrix([commercialRowRepor]);  // linha única: a evidência já abre
+    expect(screen.getByText('CD sem estoque')).toBeInTheDocument();
+    expect(screen.getByText(/Por que esta sugestão/).closest(".evidence-body")).toHaveTextContent("Restrição operacional: O CD já não cobre pedidos confirmados deste SKU (273 un. de KA-05) até 30/09");
+  });
+
+  it('sem restrição, o "Repor" não ganha aviso', () => {
+    matrix([{ ...commercialRowRepor, challenge_action: { ...commercialRowRepor.challenge_action!, operational_constraint: null } }]);
+    expect(screen.queryByText('CD sem estoque')).not.toBeInTheDocument();
+    expect(screen.queryByText('CD em risco')).not.toBeInTheDocument();
+  });
+});

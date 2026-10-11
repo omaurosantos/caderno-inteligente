@@ -13,6 +13,12 @@ export interface ChallengeAction {
   reason: string; signals_used: string[]; evidence: ChallengeEvidence[]; limitations: string[]; requires_human_review: boolean;
   /** Etapa 16.4, só nos rótulos operacionais (ausentes nos comerciais, de parceiro e de canal). */
   lever?: Lever | null; decide_by?: string | null; decide_by_reason?: string | null;
+  /** Só nos rótulos comerciais: o CD não tem o produto para o "Repor" (bloqueada = pedido confirmado sem cobertura; restrita = falta projetada). */
+  operational_constraint?: OperationalConstraint | null;
+}
+
+export interface OperationalConstraint {
+  status: 'bloqueada' | 'restrita'; nature: 'observado' | 'estimado'; uncovered_units: number | null; clients: string[]; until: string | null; summary: string; reason: string;
 }
 
 /** Etapa 16.4: GET /api/overview → decisions_today (decisões com prazo até window_end). */
