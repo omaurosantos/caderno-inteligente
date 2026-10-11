@@ -137,8 +137,46 @@ Comparação completa em [etapa-15/antes-depois.md](etapa-15/antes-depois.md), g
 - Detalhe do SKU › Evidências › "Plano de suprimento": cascata, pedidos afetados, ajustes de OP, ordens planejadas e projeção semanal. A fila mostra "Falta a partir de dd/mm".
 - Documentação de referência e [roteiro-demonstracao.md](roteiro-demonstracao.md) reescritos em torno de quatro casos: CI-0041, KA-02 · CI-0009, CI-0050 e a linha Escolar.
 
+## Etapa 16 — Fechar as lacunas do Desafio 3
+
+Especificação em [discovery-etapa-16.md](discovery-etapa-16.md); decisões em [decisions.md](decisions.md); resumo por problema, números e commits em [etapa-16-resumo.md](etapa-16-resumo.md); comparação antes × depois em [etapa-16/antes-depois.md](etapa-16/antes-depois.md).
+
+### Etapa 16.0 — Linha de base e casos-alvo
+
+- Snapshot "antes" (`docs/etapa-16/antes.json`) gravado antes de qualquer mudança; três configurações novas (`allocation.json`, `prioritization_impact.json`, `capacity_extension.json`); VC-31 a VC-34 gravados como pendentes; texto do teto da razão sazonal montado a partir de `ratio_bounds` (P7a).
+
+### Etapa 16.1 — Canais diretos e jornada da visibilidade (P1, P7c)
+
+- As 22 linhas de canal direto deixaram de ser `dados_insuficientes`: viram `canal_direto`, com venda observada pelo faturamento e sem estoque intermediário. Cobertura de 0% para 100%; os 23 pares KA sem sell-out continuam como lacuna real.
+- `/api/b2b2c/visibility` lista os canais diretos e traz `journey`: 75,1% das unidades faturadas têm venda ao consumidor observada.
+- Avisos de qualidade `SELLIN_BILLING_DIVERGENCE` e `BILLING_UNIFORM_SPLIT`.
+
+### Etapa 16.2 — Alocação de produto escasso (P5)
+
+- `allocation.py`: ordem de atendimento por pedido confirmado, com pontuação transparente, atendimento parcial e resumo por região. 17 SKUs com falta (6.626 un., R$ 401.632,40, 21 pedidos); 5 disputados, todos com ordem de atendimento.
+
+### Etapa 16.3 — Fila por urgência e valor em risco (P2)
+
+- Faixas de urgência (17 / 12 / 5 / 9 SKUs nas faixas 1 a 4), `value_at_risk`, `abc_measured` e `priority_reason`. CI-0004 lidera; CI-0047 (descontinuação) deixa a 2ª posição.
+
+### Etapa 16.4 — Rótulos por alavanca (P3)
+
+- Tabela de decisão de 11 linhas, com `lever` e `decide_by`, e bloco "Decisões de hoje" (26 itens). Priorizar produção de 26 para 12 SKUs; nenhum rótulo acima de 30%.
+
+### Etapa 16.5 — Capacidade estimada (P4)
+
+- Semanas estimadas até o fim do horizonte; `a_confirmar` de 37 SKUs para 0. Novos status `ok_estimado` e `insuficiente_estimado`.
+
+### Etapa 16.6 — Cobertura de regras, sell-out e projeção do parceiro (P6, P7b)
+
+- `/api/rules/coverage` explica as regras com zero disparos; lista de 23 pares KA × SKU com pedido e sem sell-out ("pedir sell-out"); projeção para frente nas linhas "Repor".
+
+### Etapa 16.7 — Impacto mensurável e IA honesta (P8)
+
+- Tempo de análise medido automaticamente; valor em risco endereçado e pauta Modelo × S&OP (52 divergências acima de 20% em 32 SKUs) na Validação; narrativa da IA no roteiro. 34 de 34 casos congelados passam.
+
 ## Pendências registradas
 
 - Deploy e smoke test com o motor novo; teste moderado com usuários (protocolo em [semana-4-validacao-v2.md](semana-4-validacao-v2.md)).
-- Recalibração das faixas P10–P90; capacidade além de dezembro; alocação de produto escasso entre parceiros; reconciliação Sell_In × Vendas_24m; vínculo pedido–OP (depende de dados da empresa).
+- Recalibração das faixas P10–P90; reconciliação Sell_In × Vendas_24m (hoje só aviso); vínculo pedido–OP (depende de dados da empresa); capacidade informada pela empresa depois de dezembro (hoje é estimativa); teste moderado com usuários para destravar a comparação do tempo de análise (0 registros hoje); resumo por LLM (D7, fora da Etapa 16).
 - Sem autenticação; decisões não atribuíveis a parceiros.
