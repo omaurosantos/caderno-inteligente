@@ -1,7 +1,10 @@
 import type { ChallengeAction } from './types-actions';
+import type { VisibilitySource } from './types';
 
 export type CommercialAction = 'avaliar_reposicao' | 'monitorar_estoque' | 'investigar_divergencia' | 'solicitar_atualizacao' | 'dados_insuficientes'
-  | 'conter_reposicao' | 'monitorar_excesso_parceiro';
+  | 'conter_reposicao' | 'monitorar_excesso_parceiro'
+  /** Etapa 16.1: linha de canal direto (venda observada pelo faturamento, sem estoque intermediário). */
+  | 'canal_direto';
 export type CommercialQuality = 'sufficient' | 'stale' | 'insufficient';
 export interface PartnerSummary {
   code: string; name: string; type: string; region: string | null; channel: string | null;
@@ -9,6 +12,18 @@ export interface PartnerSummary {
   challenge_action?: ChallengeAction | null;
   total_catalog_skus: number; coverage: number; latest_sell_out_month: string | null;
   backlog_quantity: number; action_counts: Record<CommercialAction, number>; quality_counts: Record<CommercialQuality, number>;
+  /** Etapa 16.1: ausente em respostas antigas. */
+  visibility_source?: VisibilitySource;
+}
+/** Etapa 16.6 (P7b): projeção do estoque do parceiro, evidência estimada nas linhas KA com dado suficiente. Nunca autoriza envio. */
+export interface ForwardProjection {
+  status: 'ok' | 'insufficient_data';
+  nature: 'estimado';
+  days_until_stockout_without_replenishment: number | null;
+  /** Quantidade para terminar o próximo mês com a cobertura-alvo (sugestão estimada). */
+  replenishment_to_target: number | null;
+  sell_out_wape: number | null;
+  reason: string | null;
 }
 export interface CommercialRow {
   partner: string; partner_name: string; sku: string; product: string; region: string | null; channel: string | null;
@@ -25,6 +40,13 @@ export interface CommercialRow {
   /** Etapa 15.5: janela de acúmulo no parceiro. */
   buildup_window_months?: number; sell_through_window?: number | null; stock_start?: number | null; stock_growth?: number | null;
   stock_identity_consistent?: boolean | null;
+  /** Etapa 16.1: 'direct' = canal direto (sem estoque intermediário; `stock_reason` explica o estoque nulo). Ausentes em respostas antigas. */
+  row_kind?: 'partner' | 'direct';
+  visibility_source?: VisibilitySource;
+  stock_reason?: string | null;
+  /** Etapa 16.6: só linhas de parceiro com dado suficiente; nas demais `null` (e `forward_projection_reason` diz por quê, quando houver). */
+  forward_projection?: ForwardProjection | null;
+  forward_projection_reason?: string | null;
   periods: Array<{ month: string; sell_in_quantity: number | null; sell_out_quantity: number | null; estimated_stock: number | null; data_nature: string | null }>;
 }
 export interface CommercialMetadata {

@@ -4,11 +4,11 @@ import { Link } from 'react-router-dom';
 import { Badge, EmptyState, Hint, SectionCard } from '../components';
 import { ChallengeBadge } from './ChallengeAction';
 import type { ChallengeAction } from '../types-actions';
-import type { CommercialPage, CommercialRow } from '../types-commercial';
+import type { CommercialPage, CommercialRow, ForwardProjection } from '../types-commercial';
 import { displayDays, displayNumber, displayShare, displayUnits, formatDate, localizeText } from '../pages/shared';
 
 export const qualityLabels = { sufficient: 'Suficiente no recorte', stale: 'Antigo/descontínuo', insufficient: 'Insuficiente' };
-export const commercialActions = { avaliar_reposicao: 'Avaliar reposição', monitorar_estoque: 'Monitorar estoque do parceiro', investigar_divergencia: 'Investigar divergência', solicitar_atualizacao: 'Solicitar atualização dos dados', dados_insuficientes: 'Sem recomendação por dados insuficientes', conter_reposicao: 'Não repor; acionar sell-out com o parceiro', monitorar_excesso_parceiro: 'Monitorar estoque alto no parceiro' };
+export const commercialActions = { avaliar_reposicao: 'Avaliar reposição', monitorar_estoque: 'Monitorar estoque do parceiro', investigar_divergencia: 'Investigar divergência', solicitar_atualizacao: 'Solicitar atualização dos dados', dados_insuficientes: 'Sem recomendação por dados insuficientes', conter_reposicao: 'Não repor; acionar sell-out com o parceiro', monitorar_excesso_parceiro: 'Monitorar estoque alto no parceiro', canal_direto: 'Venda direta observada' };
 export const monthLabel = (value: string | null) => value ? value.split('-').reverse().join('/') : 'Não disponível';
 
 const thresholdNames: Record<string, string> = {
@@ -24,6 +24,22 @@ const thresholdNames: Record<string, string> = {
   buildup_max_sell_through: 'Sell-through máximo para acúmulo (proporção)',
   buildup_min_stock_growth: 'Crescimento mínimo do estoque para acúmulo (proporção)',
   stock_identity_tolerance: 'Tolerância da conta de estoque (unidades)',
+};
+
+/** Canal direto: venda observada pelo faturamento, sem estoque intermediário (nunca 0% de sell-out). */
+export const isDirect = (row: CommercialRow) => row.row_kind === 'direct' || row.action === 'canal_direto';
+/** Etapa 16.6: linhas sem nenhum dado de venda do parceiro, mas com pedidos confirmados, pedem o sell-out ao parceiro. */
+export const needsSellOut = (row: CommercialRow) => !!row.challenge_action?.signals_used?.includes('SELL_OUT_REQUEST');
+/** Projeção estimada (sempre rotulada como estimada); `null` quando ausente ou com dado insuficiente. */
+export const projectionOf = (row: CommercialRow): ForwardProjection | null => row.forward_projection?.status === 'ok' ? row.forward_projection : null;
+const SellOutBadge = ({ row }: { row: CommercialRow }) => needsSellOut(row) ? <Badge tone="medium">Pedir sell-out</Badge> : null;
+const NOT_APPLICABLE = 'Não se aplica';
+const stockCell = (row: CommercialRow) => isDirect(row) ? 'Sem estoque no canal' : displayNumber(row.estimated_stock);
+const coverageCell = (row: CommercialRow) => isDirect(row) ? NOT_APPLICABLE : displayDays(row.coverage_days);
+/** Quantidade sugerida pela projeção, abaixo do estoque estimado. */
+const ReplenishNote = ({ row }: { row: CommercialRow }) => {
+  const projection = projectionOf(row);
+  return projection && projection.replenishment_to_target !== null ? <small>Repor {displayUnits(projection.replenishment_to_target)} · estimado</small> : null;
 };
 
 const rowKey = (row: CommercialRow) => `${row.partner}-${row.sku}`;
@@ -51,7 +67,20 @@ const rank = (row: CommercialRow) => actionable.includes(row.action) ? 0 : row.a
 export const sortPartnerRows = (rows: CommercialRow[]) => [...rows].sort((left, right) => rank(left) - rank(right) || ascending(left.coverage_days) - ascending(right.coverage_days) || stable(left, right));
 
 /** Evidência de um vínculo parceiro–SKU: o motivo, três números e a origem mensal. */
+function DirectEvidence({ row }: { row: CommercialRow }) {
+  return <div className="evidence-body">
+    <p><strong>Por que esta linha:</strong> {localizeText(row.recommendation_reason)}</p>
+    <dl className="evidence-figures">
+      <div><dt>Vendido ao consumidor (faturamento)</dt><dd>{displayUnits(row.sell_out_recent)}<small>observado</small></dd></div>
+      <div><dt>Estoque</dt><dd>{row.stock_reason ?? 'Sem estoque intermediário'}</dd></div>
+    </dl>
+    <div className="table-shell" tabIndex={0} role="region" aria-label={`Origem mensal de ${row.partner} e ${row.sku}`}><table className="data-table"><caption>Origem: faturamento · {row.partner} · {row.sku}</caption><thead><tr><th>Mês</th><th>Faturado ao consumidor</th></tr></thead><tbody>{row.periods.map(period => <tr key={period.month}><td>{monthLabel(period.month)}</td><td>{displayNumber(period.sell_out_quantity)}</td></tr>)}</tbody></table></div>
+  </div>;
+}
+
 function Evidence({ row }: { row: CommercialRow }) {
+  if (isDirect(row)) return <DirectEvidence row={row} />;
+  const projection = projectionOf(row);
   return <div className="evidence-body">
     <p><strong>Por que esta sugestão:</strong> {localizeText(row.recommendation_reason)}</p>
     <dl className="evidence-figures">
@@ -61,6 +90,9 @@ function Evidence({ row }: { row: CommercialRow }) {
       {isBuildup(row) && <div><dt>Vendido ÷ enviado</dt><dd>{displayShare(row.sell_through_window)}<small>{row.buildup_window_months} meses · estoque {displayNumber(row.stock_start)} → {displayNumber(row.estimated_stock)}</small></dd></div>}
     </dl>
     <div className="table-shell" tabIndex={0} role="region" aria-label={`Origem mensal de ${row.partner} e ${row.sku}`}><table className="data-table"><caption>Origem: Sell_In e Sell_Out · {row.partner} · {row.sku}</caption><thead><tr><th>Mês</th><th>Enviado</th><th>Vendido</th><th>Estoque estimado</th></tr></thead><tbody>{row.periods.map(period => <tr key={period.month}><td>{monthLabel(period.month)}</td><td>{displayNumber(period.sell_in_quantity)}</td><td>{displayNumber(period.sell_out_quantity)}</td><td>{displayNumber(period.estimated_stock)}</td></tr>)}</tbody></table></div>
+    {projection && <p><strong>Projeção (estimada):</strong> {projection.days_until_stockout_without_replenishment !== null && `o estoque acaba em cerca de ${displayDays(projection.days_until_stockout_without_replenishment)} sem reposição; `}{projection.replenishment_to_target !== null && `para a cobertura-alvo, repor ${displayUnits(projection.replenishment_to_target)}; `}{projection.sell_out_wape !== null && `erro do sell-out ${displayShare(projection.sell_out_wape)}. `}Sugestão estimada: não autoriza envio.</p>}
+    {!projection && row.action === 'avaliar_reposicao' && row.forward_projection_reason && <p><strong>Projeção:</strong> {row.forward_projection_reason}</p>}
+    {needsSellOut(row) && <p><strong>Pedir sell-out ao parceiro:</strong> {displayUnits(row.backlog_quantity)} em pedidos sem cobertura e nenhum dado de venda do parceiro.</p>}
     {row.challenge_action && <p><strong>Rótulo {row.challenge_action.label}:</strong> {row.challenge_action.evidence.filter((item) => item.value !== null).map((item) => `${item.label}: ${typeof item.value === 'number' ? displayNumber(item.value) : item.value}`).join('; ') || row.challenge_action.reason}.</p>}
     {row.orders.length > 0 && <ul className="plain-list">{row.orders.map(order => <li key={order.order}>Pedido {order.order}: {displayUnits(order.quantity)}, prometido para {order.promised_date ? formatDate(order.promised_date) : 'data ausente'} ({order.status}).</li>)}</ul>}
   </div>;
@@ -74,8 +106,8 @@ function sharedLabel(rows: CommercialRow[]): ChallengeAction | undefined {
 
 function Stats({ row }: { row: CommercialRow }) {
   return <dl className="opp-stats">
-    <div><dt>Estoque (un.)</dt><dd>{displayNumber(row.estimated_stock)}</dd></div>
-    <div><dt>Cobertura de estoque</dt><dd>{displayDays(row.coverage_days)}</dd></div>
+    <div><dt>Estoque (un.)</dt><dd>{stockCell(row)}<ReplenishNote row={row} /></dd></div>
+    <div><dt>Cobertura de estoque</dt><dd>{coverageCell(row)}</dd></div>
     <div><dt>Vende por mês</dt><dd>{displayNumber(row.average_monthly_sell_out)}</dd></div>
   </dl>;
 }
@@ -87,10 +119,11 @@ export function OpportunityCard({ row, uniform, hideLabel, expanded, onToggle }:
       <Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link>
       <span><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link> <small>{row.product}</small></span>
     </div>
-    {(!uniform || row.data_quality !== 'sufficient' || (!hideLabel && row.challenge_action)) && <div className="opp-flags">
+    {(!uniform || row.data_quality !== 'sufficient' || needsSellOut(row) || (!hideLabel && row.challenge_action)) && <div className="opp-flags">
       {!uniform && <strong className="commercial-action">{row.action_label}</strong>}
       {row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}
       <BuildupBadge row={row} />
+      <SellOutBadge row={row} />
       {!hideLabel && <ChallengeBadge action={row.challenge_action} />}
     </div>}
     <Stats row={row} />
@@ -122,9 +155,9 @@ export function CommercialMatrix({ response }: { response: CommercialPage<Commer
         return [
           <tr key={key} className={expanded ? 'is-expanded' : ''}>
             <td data-label="Parceiro / SKU"><Link to={`/parceiros/${encodeURIComponent(row.partner)}`}>{row.partner_name}</Link><br /><Link to={`/skus/${encodeURIComponent(row.sku)}`}>{row.sku}</Link><small>{row.product}</small>{!shared && <ChallengeBadge action={row.challenge_action} />}</td>
-            {!uniform && <td className="cell-stack" data-label="Ação comercial"><strong className="commercial-action">{row.action_label}</strong>{row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}<BuildupBadge row={row} /></td>}
-            <td className="num" data-label="Estoque estimado">{displayNumber(row.estimated_stock)}</td>
-            <td className="num" data-label="Cobertura de estoque">{displayDays(row.coverage_days)}</td>
+            {!uniform && <td className="cell-stack" data-label="Ação comercial"><strong className="commercial-action">{row.action_label}</strong>{row.data_quality !== 'sufficient' && <Badge tone="medium">{qualityLabels[row.data_quality]}</Badge>}<BuildupBadge row={row} /><SellOutBadge row={row} /></td>}
+            <td className="num" data-label="Estoque estimado">{stockCell(row)}<ReplenishNote row={row} /></td>
+            <td className="num" data-label="Cobertura de estoque">{coverageCell(row)}</td>
             <td className="num" data-label="Vende por mês">{displayNumber(row.average_monthly_sell_out)}</td>
             <td className="cell-action"><button type="button" className="secondary-button evidence-toggle" aria-expanded={expanded} aria-label={`Evidências de ${row.partner} · ${row.sku} — ${row.action_label}`} onClick={() => toggle(key)}>{expanded ? 'Ocultar evidências' : 'Ver evidências'}</button></td>
           </tr>,

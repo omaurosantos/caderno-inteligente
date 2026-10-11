@@ -1,8 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { startAnalysis } from '../analysisTimer';
+import { AllocationBlock } from '../components/AllocationBlock';
 import { PartnerSkuContext } from '../components/PartnerSkuContext';
-import { ChallengeBadge } from '../components/ChallengeAction';
+import { ChallengeBadge, ChallengeLever } from '../components/ChallengeAction';
 import { SkuEventsBlock, UrgentEventLine } from '../components/EventAlerts';
 import { TabBar, TabPanel } from '../components/Tabs';
 import { SkuRevenueBlock } from '../components/RevenueForecast';
@@ -86,6 +88,8 @@ export default function SkuDetailPage({ refreshToken }: { refreshToken: number }
   const loader = useCallback((signal: AbortSignal) => api.skuDetail(sku, signal), [sku]);
   const { data: detail, error, loading, loadedAt, refresh: load } = useApiResource(loader, refreshToken);
   usePageLoadStatus(loading, error, loadedAt);
+  // Etapa 16.7: o tempo de análise conta a partir da abertura do detalhe (só no navegador; o formulário de decisão o pré-preenche).
+  useEffect(() => { startAnalysis(sku); }, [sku]);
   const backTarget = typeof location.state === 'object' && location.state && 'from' in location.state && typeof location.state.from === 'string' && isInternalPath(location.state.from) ? location.state.from : '/fila';
 
   if (error && !detail) return <div className="sku-detail-page"><PageIntro title={sku || 'SKU não informado'} description="Não foi possível carregar as evidências deste item." action={<button className="secondary-button" onClick={() => navigate(backTarget)}>Voltar</button>} /><ErrorState message={error} onRetry={() => void load()} /></div>;
@@ -117,6 +121,7 @@ export default function SkuDetailPage({ refreshToken }: { refreshToken: number }
         <p className="answer-sentence">{answer}</p>
         {insufficient ? <p className="answer-why">{forecast.limitation}</p> : recommendation.planned_orders ? recommendation.rationale.map((line) => <p key={line} className="answer-why">{line}</p>) : <p className="answer-why">{why}</p>}
         {recommendation.action === 'sem_acao_necessaria' && <p className="answer-why">Sem produção neste horizonte; os riscos abaixo continuam.</p>}
+        <ChallengeLever action={detail.challenge_action} />
         <div className="answer-badges"><ChallengeBadge action={detail.challenge_action} />{recommendation.capacity_status === 'requires_review' && <Badge tone="medium">Validar capacidade</Badge>}{insufficient ? <><Badge tone="medium">Dados insuficientes</Badge><Badge tone="medium">{recommendation.action_label}</Badge></> : <Badge tone="info">previsto</Badge>}</div>
         <div className="answer-actions">
           <Link className="primary-button" to={`/decisoes?sku=${encodeURIComponent(sku)}${detail.challenge_action ? `&rotulo=${detail.challenge_action.code}` : ''}`}>Registrar decisão</Link>
@@ -137,6 +142,7 @@ export default function SkuDetailPage({ refreshToken }: { refreshToken: number }
 
     <TabPanel id="resumo" active={tab === 'resumo'} prefix="sku">
       <UrgentEventLine alerts={detail.event_alerts} onOpen={() => selectTab('evidencias')} />
+      <AllocationBlock allocation={detail.allocation} />
       <p className="fact-line">{indicator.missing_data.length > 0 ? <><strong>Dados ausentes:</strong> {indicator.missing_data.map((field) => missingDataNames[field] ?? field.split('_').join(' ')).join(', ')} (ausência não é zero).</> : <><strong>Dados ausentes:</strong> nenhum nos campos desta análise.</>}</p>
       {recommendation.capacity_status === 'requires_review' && <p className="fact-line"><strong>Capacidade:</strong> {recommendation.capacity?.status === 'insuficiente' ? <>{displayQuantity(recommendation.capacity.unscheduled_quantity)} un. planejadas não cabem na linha até a data de necessidade. <Link to="/capacidade">Ver capacidade</Link>.</> : 'valide a capacidade da família antes de produzir.'}</p>}
       {recommendation.planned_orders && <p className="fact-line">Plano datado, ordens e projeção semanal em <button type="button" className="link-button" onClick={() => selectTab('evidencias')}>Evidências</button>.</p>}
@@ -150,7 +156,7 @@ export default function SkuDetailPage({ refreshToken }: { refreshToken: number }
         <p className="fact-line">Tendência <strong className={`trend-${forecast.trend}`}>{forecast.trend}</strong>{forecast.trend_change_ratio === null ? '' : ` (${displayPercent(forecast.trend_change_ratio)})`} · modelo {forecast.model_label} · previsão de 3 meses <strong>{displayUnits(forecast.forecast_total_3m)}</strong> <Badge tone="info">previsto</Badge> · erro médio de {displayPercent(forecast.backtest_wape)} {forecast.engine === 'v2' ? `em ${forecast.backtest_windows} testes com meses de pico` : 'no teste dos últimos 3 meses'} <Hint term="wape" /></p>
         <SkuEventsBlock embedded alerts={detail.event_alerts} scenario={detail.event_scenario} />
       </details>}
-      {!insufficient && recommendation.planned_orders && <SupplyPlanBlock recommendation={recommendation} />}
+      {!insufficient && recommendation.planned_orders && <SupplyPlanBlock recommendation={recommendation} allocated={Boolean(detail.allocation?.orders.length)} />}
     <details className="detail-block">
       <summary>Dados do SKU</summary>
       <dl className="fact-list">

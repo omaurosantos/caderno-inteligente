@@ -32,7 +32,12 @@ from caderno_inteligente.revenue import build_revenue_forecasts  # noqa: E402
 from caderno_inteligente.indicators import build_sku_indicators, registered_demand_warning  # noqa: E402
 from caderno_inteligente.supply_plan import attach_partner_buildup, build_supply_plans, load_supply_settings  # noqa: E402
 from caderno_inteligente.partner_insights import build_partner_insights, load_commercial_thresholds  # noqa: E402
-from caderno_inteligente.capacity_plan import build_capacity_plan  # noqa: E402
+from caderno_inteligente.direct_channels import build_direct_channels, load_direct_channel_settings  # noqa: E402
+from caderno_inteligente.visibility import billing_uniform_split_warning, build_visibility_journey, sellin_billing_divergence_warning  # noqa: E402
+from caderno_inteligente.action_labels import build_lever_context, decisions_today, label_channel_row  # noqa: E402
+from caderno_inteligente.allocation import build_allocation, load_allocation_settings  # noqa: E402
+from caderno_inteligente.impact import abc_registry_divergence_warning, load_impact_settings, measured_abc, urgency_tier  # noqa: E402
+from caderno_inteligente.capacity_plan import build_capacity_plan, load_capacity_extension  # noqa: E402
 from caderno_inteligente.production_plan import build_production_plan  # noqa: E402
 from caderno_inteligente.projected_stock import build_projected_stock  # noqa: E402
 from caderno_inteligente.ingestion import load_workbook  # noqa: E402
@@ -57,6 +62,19 @@ EVENT_FACTORS_FILE = ROOT / "config/event_factors.json"
 CHALLENGE_ACTIONS_FILE = ROOT / "config/challenge_actions.json"
 ENGINE_CONFIG_FILE = ROOT / "config/forecast_engine.json"
 SUPPLY_PLAN_FILE = ROOT / "config/supply_plan.json"
+# Etapa 16: configurações novas entram na assinatura do cache desde já (lidas pelas tarefas da Onda 2).
+ALLOCATION_FILE = ROOT / "config/allocation.json"
+IMPACT_FILE = ROOT / "config/prioritization_impact.json"
+CAPACITY_EXTENSION_FILE = ROOT / "config/capacity_extension.json"
+ETAPA16_CONFIG_FILES = (ALLOCATION_FILE, IMPACT_FILE, CAPACITY_EXTENSION_FILE)
+COMMERCIAL_THRESHOLDS_FILE = ROOT / "config/commercial_thresholds.json"
+DIRECT_CHANNEL_FILE = ROOT / "config/direct_channel_thresholds.json"
+PARTNER_PROJECTION_FILE = ROOT / "config/partner_projection.json"
+# Camadas aditivas: arquivo ausente entra na assinatura como None (a camada cai sozinha, a API não).
+OPTIONAL_CONFIG_FILES = (*ETAPA16_CONFIG_FILES, COMMERCIAL_THRESHOLDS_FILE, DIRECT_CHANNEL_FILE, PARTNER_PROJECTION_FILE)
+# Fallback da capacidade quando config/capacity_extension.json está ausente ou inválido: só o calendário da base.
+CAPACITY_EXTENSION_OFF = {"enabled": False, "method": "media_compromissos_8_semanas", "scenario": "central", "lookback_weeks": 8,
+                          "conservative_method": "minimo_disponivel_observado"}
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("caderno_inteligente.api")
@@ -151,6 +169,13 @@ def _file_signature(path: Path) -> tuple[int, int]:
     return stat.st_mtime_ns, stat.st_size
 
 
+def _optional_file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        return _file_signature(path)
+    except FileNotFoundError:
+        return None
+
+
 VERSION_CHECK_SECONDS = 5.0
 _version_seen: tuple[float, int] | None = None
 
@@ -179,7 +204,8 @@ def _source_signature() -> tuple:
 
 
 def _pipeline_signature() -> tuple[tuple, ...]:
-    return (_source_signature(), *(_file_signature(path) for path in (WEIGHTS_FILE, THRESHOLDS_FILE, ENGINE_CONFIG_FILE, SUPPLY_PLAN_FILE)))
+    return (_source_signature(), *(_file_signature(path) for path in (WEIGHTS_FILE, THRESHOLDS_FILE, ENGINE_CONFIG_FILE, SUPPLY_PLAN_FILE)),
+            *(_optional_file_signature(path) for path in OPTIONAL_CONFIG_FILES))
 
 
 def load_source() -> dict[str, pd.DataFrame]:
@@ -190,8 +216,34 @@ def load_source() -> dict[str, pd.DataFrame]:
 
 
 _pipeline_lock = Lock()
-_pipeline_cache: tuple[tuple[tuple, ...], tuple, dict, dict] | None = None
+# Slots: (assinatura, resultado, planos, capacidade, alocação ou a exceção que a bloqueou, impacto ou None).
+_pipeline_cache: tuple[tuple[tuple, ...], tuple, dict, dict, dict | Exception, dict | None] | None = None
 _cache_hits = 0
+
+
+def _current_prices(dataset: dict[str, pd.DataFrame]) -> dict[str, float | None]:
+    """Preço vigente por SKU: o último de Precos_Produtos por Vigência fictícia. SKU sem preço fica fora (vira None na alocação)."""
+    prices = dataset.get("Precos_Produtos")
+    if prices is None or prices.empty:
+        return {}
+    return prices.sort_values("Vigência fictícia").groupby("SKU")["Preço unitário (R$)"].last().to_dict()
+
+
+def _layer_warning(code: str, config_file: Path, message: str, error: Exception) -> dict:
+    """Aviso de qualidade de uma camada aditiva que caiu; o restante do pipeline segue."""
+    logger.warning("additive_layer_failed code=%s error_type=%s", code, type(error).__name__)
+    # Em produção a causa técnica fica só no log (mesma regra das mensagens de erro da API).
+    return {"code": code, "sheet": f"config/{config_file.name}", "count": 1, "message": public_message(settings(), message, error)}
+
+
+def _capacity_extension(quality: dict) -> dict:
+    """Extensão da capacidade (Etapa 16.5); ausente ou inválida, a capacidade usa só o calendário da base e avisa."""
+    try:
+        return load_capacity_extension(CAPACITY_EXTENSION_FILE)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        quality["warnings"].append(_layer_warning("CAPACITY_EXTENSION_UNAVAILABLE", CAPACITY_EXTENSION_FILE,
+                                                  "Capacidade estimada desligada; só o calendário da base foi usado", error))
+        return dict(CAPACITY_EXTENSION_OFF)
 
 
 def _build_pipeline():
@@ -207,26 +259,59 @@ def _build_pipeline():
     warning = registered_demand_warning(indicators, thresholds["registered_demand_divergence"])
     if warning:
         quality["warnings"].append(warning)
+    # Etapa 16.1 (P7c): fontes comerciais que não fecham entre si viram aviso de qualidade.
+    for source_warning in (sellin_billing_divergence_warning(dataset), billing_uniform_split_warning(dataset)):
+        if source_warning:
+            quality["warnings"].append(source_warning)
     # Etapa 15.3: plano datado por SKU (projeção diária, ordens planejadas, ajustes de OP) alimenta regras e ações.
     plans = build_supply_plans(dataset, indicators, forecasts, supply_settings)
     # Etapa 15.5: pares parceiro–SKU com estoque acumulando chegam ao SKU (sinal e evidência na OP a rever).
-    attach_partner_buildup(plans, build_partner_insights(dataset, load_commercial_thresholds(ROOT / "config/commercial_thresholds.json"))["items"])
+    partner_items = build_partner_insights(dataset, load_commercial_thresholds(COMMERCIAL_THRESHOLDS_FILE))["items"]
+    attach_partner_buildup(plans, partner_items)
     # Etapa 15.4: as ordens planejadas disputam a capacidade livre de cada linha, semana a semana.
     capacity = build_capacity_plan(plans, indicators, dataset["Capacidade_Semanal"], dataset["Carteira_Pedidos"], supply_settings["reference_date"],
-                                   load_engine_config(ENGINE_CONFIG_FILE)["evaluation"]["peak_months"])
+                                   load_engine_config(ENGINE_CONFIG_FILE)["evaluation"]["peak_months"], extension=_capacity_extension(quality))
     for sku, plan in plans.items():
         plan["capacity"] = capacity["skus"].get(sku)
         if plan["capacity"] and plan["capacity"]["status"] == "insuficiente":
             plan["signals"].append("CAPACITY_SHORTFALL")
+    # Etapa 16.2: o estoque escasso é distribuído só entre pedidos confirmados (sugestão; nada é reservado).
+    # Camada aditiva: configuração inválida derruba só a alocação (e o impacto); a fila volta a ordenar por sinais, com aviso.
+    prices = _current_prices(dataset)
+    try:
+        allocation = build_allocation(plans, dataset["Parceiros_Canais"], partner_items, prices, load_allocation_settings(ALLOCATION_FILE), supply_settings["reference_date"])
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        allocation = error if isinstance(error, (ValueError, KeyError)) else ValueError(str(error))
+        quality["warnings"].append(_layer_warning("ALLOCATION_UNAVAILABLE", ALLOCATION_FILE, "Alocação indisponível; a fila foi ordenada por sinais", error))
+    # Etapa 16.3: faixa de urgência e valor em risco ordenam a fila; a ABC medida é exibida ao lado da do cadastro.
+    impact = None
+    if not isinstance(allocation, Exception):
+        try:
+            impact_settings = load_impact_settings(IMPACT_FILE)
+            abc = measured_abc(dataset["Vendas_24m"], impact_settings)
+            abc_warning = abc_registry_divergence_warning(dataset["Produtos"], abc)
+            if abc_warning:
+                quality["warnings"].append(abc_warning)
+            impact = {"plans": plans, "allocation": allocation, "prices": prices, "abc": abc, "settings": impact_settings}
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            quality["warnings"].append(_layer_warning("IMPACT_UNAVAILABLE", IMPACT_FILE, "Faixa e valor em risco indisponíveis; a fila foi ordenada por sinais", error))
     issues = evaluate_rules(indicators, thresholds, plans)
-    ranking = prioritize(issues, load_weights(), indicators)
+    weights = load_weights()
+    try:
+        ranking = prioritize(issues, weights, indicators, impact=impact)
+    except (ValueError, KeyError, TypeError) as error:
+        if impact is None:
+            raise
+        quality["warnings"].append(_layer_warning("IMPACT_UNAVAILABLE", IMPACT_FILE, "Faixa e valor em risco indisponíveis; a fila foi ordenada por sinais", error))
+        impact = None
+        ranking = prioritize(issues, weights, indicators)
     logger.info(
         "pipeline_built duration_ms=%.1f skus=%s issues=%s",
         (perf_counter() - started) * 1000,
         len(indicators),
         len(issues),
     )
-    return (dataset, quality, indicators, issues, ranking, forecasts), plans, capacity
+    return (dataset, quality, indicators, issues, ranking, forecasts), plans, capacity, allocation, impact
 
 
 def _cached():
@@ -236,8 +321,8 @@ def _cached():
         if _pipeline_cache and _pipeline_cache[0] == signature:
             _cache_hits += 1
             return _pipeline_cache
-        result, plans, capacity = _build_pipeline()
-        _pipeline_cache = (signature, result, plans, capacity)
+        result, plans, capacity, allocation, impact = _build_pipeline()
+        _pipeline_cache = (signature, result, plans, capacity, allocation, impact)
         return _pipeline_cache
 
 
@@ -254,6 +339,46 @@ def supply_plans() -> dict[str, dict]:
 def capacity_plan() -> dict:
     """Capacidade semanal finita (Etapa 15.4), do mesmo cache do pipeline."""
     return _cached()[3]
+
+
+def allocation() -> dict:
+    """Alocação sugerida do estoque escasso entre pedidos confirmados (Etapa 16.2), do mesmo cache do pipeline.
+
+    Se a configuração bloqueou a alocação, levanta a mesma causa (ValueError/KeyError → 422 nas rotas), sem recalcular."""
+    result = _cached()[4]
+    if isinstance(result, Exception):
+        raise ValueError(str(result))
+    return result
+
+
+def _allocation_or_none() -> dict | None:
+    """Para camadas que só enriquecem (rótulos, detalhe, validação): alocação indisponível vira None."""
+    result = _cached()[4]
+    return None if isinstance(result, Exception) else result
+
+
+def _impact() -> dict | None:
+    """Entradas do ranking por faixa e valor (Etapa 16.3): plans, allocation, prices, abc e settings; None se a camada caiu."""
+    return _cached()[5]
+
+
+_direct_channels_cache: tuple[tuple, dict | Exception] | None = None
+
+
+def direct_channels() -> dict:
+    """Sugestão de canais diretos (Etapa 16.1), calculada uma vez por pipeline em cache e reaproveitada pelas rotas."""
+    global _direct_channels_cache
+    built = pipeline()
+    cached = _direct_channels_cache
+    if cached is None or cached[0] is not built:
+        try:
+            result = build_direct_channels(built[0], load_direct_channel_settings(DIRECT_CHANNEL_FILE))
+        except (OSError, ValueError, KeyError) as error:
+            result = error if isinstance(error, (ValueError, KeyError)) else ValueError(str(error))
+        cached = _direct_channels_cache = (built, result)
+    if isinstance(cached[1], Exception):
+        raise cached[1]
+    return cached[1]
 
 
 _revenue_cache: tuple[tuple, dict] | None = None
@@ -379,21 +504,52 @@ def _event_context() -> tuple[dict[str, list[dict]] | None, date | None]:
         return None, None
 
 
-def _sku_challenge(sku: str, recommendation: dict, priority: int | None, forecast_status: str | None, alerts_by_sku, reference_date, settings: dict) -> dict:
+def _tier_info(sku: str, ranked: dict | None, plan: dict, allocation_sku: dict | None) -> dict | None:
+    """Faixa de urgência da linha do ranking; fora do ranking (ou ranking sem faixa) calculada pelo mesmo núcleo."""
+    if ranked and ranked.get("urgency_tier") is not None:
+        return {"tier": ranked["urgency_tier"], "label": ranked.get("urgency_label")}
+    impact = _impact()
+    if impact is None:
+        return None
+    issues = pipeline()[3]
+    codes = set(issues.loc[issues["sku"] == sku, "code"]) if not issues.empty else set()
+    return urgency_tier(plan, allocation_sku, codes, impact["settings"])
+
+
+def _sku_challenge(sku: str, recommendation: dict, ranked: dict | None, forecast_status: str | None, alerts_by_sku, reference_date, settings: dict) -> dict:
+    """Rótulo do SKU pela tabela de alavancas (Etapa 16.4): contexto do plano, da alocação e da faixa da linha do ranking."""
     alerts = None if alerts_by_sku is None else alerts_by_sku.get(sku, [])
-    return label_operational(recommendation["action"], priority, forecast_status, alerts, recommendation.get("capacity_status"), reference_date, settings)
+    plan, context, allocation_result = supply_plans().get(sku), None, _allocation_or_none()
+    if plan is not None and allocation_result is not None:  # alocação indisponível: rótulo sem contexto de alavancas
+        allocation_sku = allocation_result["skus"].get(sku)
+        capacity_status = (plan.get("capacity") or {}).get("status")
+        context = build_lever_context(plan, allocation_sku, _tier_info(sku, ranked, plan, allocation_sku), capacity_status, plan.get("reference_date") or reference_date)
+    priority = ranked["priority"] if ranked else None
+    return label_operational(recommendation["action"], priority, forecast_status, alerts, recommendation.get("capacity_status"), reference_date, settings, context=context)
 
 
 def _enrich_challenge(result: dict) -> dict:
     """Rótulos do desafio nas linhas parceiro–SKU e no resumo de cada parceiro; os campos existentes não mudam."""
     settings = load_action_settings(CHALLENGE_ACTIONS_FILE)
     priority_by_sku = {row["sku"]: row["priority"] for row in _records(pipeline()[4])}
+    # Etapa 16.2: o parceiro atendido primeiro em SKU disputado também é rotulado (sinal ALLOCATION_FIRST).
+    allocation_result = _allocation_or_none()
+    allocation_by_partner = {entry["partner"]: entry for entry in allocation_result["partners"]} if allocation_result else {}
     by_partner: dict[str, list[dict]] = {}
+    channel_rows = None
     for row in result["items"]:
-        row["challenge_action"] = label_commercial_row(row, settings)
+        if row.get("row_kind") == "direct":
+            # Etapa 16.1: no canal direto o rótulo vem da sugestão de canais diretos para o mesmo canal e SKU.
+            if channel_rows is None:
+                channel_rows = direct_channels()["rows"]
+            match = next((item for item in channel_rows.get(row["partner"], []) if item["sku"] == row["sku"]), None)
+            row["challenge_action"] = label_channel_row(match) if match is not None else label_commercial_row(row, settings)
+        else:
+            row["challenge_action"] = label_commercial_row(row, settings)
         by_partner.setdefault(row["partner"], []).append(row)
     for summary in result["partners"]:
-        summary["challenge_action"] = label_partner(summary, by_partner.get(summary["code"], []), priority_by_sku, settings)
+        summary["challenge_action"] = label_partner(summary, by_partner.get(summary["code"], []), priority_by_sku, settings,
+                                                    allocation_partner=allocation_by_partner.get(summary["code"]))
     return result
 
 
@@ -511,8 +667,19 @@ def overview():
         "risk_distribution": issues.code.value_counts().to_dict(),
         "confidence_distribution": ranking.confidence.value_counts().to_dict(),
         "projected_stock": _projected_stock_summary(),
+        "decisions_today": _decisions_today_summary(),
         **decisions,
     }
+
+
+def _decisions_today_summary() -> dict | None:
+    """Etapa 16.4: decisões com prazo até a referência + 7 dias. Camada aditiva: falha não derruba o Início."""
+    try:
+        reference = date.fromisoformat(allocation()["reference_date"])
+        return decisions_today(forecast_summaries(), reference, 7)
+    except Exception:  # noqa: BLE001
+        logger.exception("decisions_today_failed")
+        return None
 
 
 @app.get("/api/priorities")
@@ -556,6 +723,9 @@ def event_summary():
         raise HTTPException(422, _describe_error("Análise de eventos bloqueada por dados/configuração inválidos", error)) from error
 
 
+IMPACT_FIELDS = ("urgency_tier", "urgency_label", "value_at_risk", "abc_registry", "abc_measured", "priority_reason")
+
+
 @app.get("/api/forecasts")
 def forecast_summaries():
     """Consolidate cached forecasts and recommendations without changing the official ranking."""
@@ -589,8 +759,10 @@ def forecast_summaries():
                 "confidence_reason": ranked["confidence_reason"] if ranked else (
                     "SKU fora do ranking oficial; a confiança exibida vem do backtest da previsão."
                 ),
+                # Etapa 16.3: faixa, valor em risco e ABC vêm da linha do ranking (None fora dele).
+                **{key: ranked.get(key) if ranked else None for key in IMPACT_FIELDS},
                 "forecast": forecast,
-                "challenge_action": _sku_challenge(sku, recommendation, ranked["priority"] if ranked else None, forecast.get("status"), alerts_by_sku, reference_date, challenge_settings),
+                "challenge_action": _sku_challenge(sku, recommendation, ranked, forecast.get("status"), alerts_by_sku, reference_date, challenge_settings),
                 "operational_recommendation": {
                     key: recommendation[key]
                     for key in (
@@ -639,11 +811,14 @@ def detail(sku: str):
     event_item = _event_item(sku)
     alerts_by_sku, reference_date = _event_context()
     ranked = _records(ranking[ranking.sku == sku])
-    challenge = _sku_challenge(sku, recommendation, ranked[0]["priority"] if ranked else None, forecast.get("status"), alerts_by_sku, reference_date, load_action_settings(CHALLENGE_ACTIONS_FILE))
+    challenge = _sku_challenge(sku, recommendation, ranked[0] if ranked else None, forecast.get("status"), alerts_by_sku, reference_date, load_action_settings(CHALLENGE_ACTIONS_FILE))
     return {
         "indicator": indicator,
         "issues": item_issues,
-        "priority": _records(ranking[ranking.sku == sku]),
+        "priority": ranked,
+        **{key: ranked[0].get(key) if ranked else None for key in IMPACT_FIELDS},
+        # Etapa 16.2: bloco da alocação do SKU (ordem de atendimento e motivo), ou null sem pedido aberto.
+        "allocation": (_allocation_or_none() or {"skus": {}})["skus"].get(sku),
         "score_contributions": contributions,
         "forecast": forecast,
         "revenue_forecast": _revenue_item(sku),
@@ -695,7 +870,7 @@ def scenario(item: Scenario):
     thresholds = {**load_rule_thresholds(), **(item.thresholds or {})}
     weights = {**load_weights(), **(item.weights or {})}
     scenario_issues = evaluate_rules(indicators, thresholds, supply_plans())
-    ranking = prioritize(scenario_issues, weights, indicators)
+    ranking = prioritize(scenario_issues, weights, indicators, impact=_impact())
     return {
         "is_simulation": True,
         "warning": "Cenário hipotético: não altera pesos, limiares ou ranking oficial.",
@@ -749,15 +924,27 @@ def b2b_visibility():
     sell_out = dataset["Sell_Out"]
     total_skus = int(dataset["Produtos"]["SKU"].nunique())
     latest = sell_out["Mês"].max()
+    # Etapa 16.1: canal direto é observado pelo faturamento (Vendas_24m) nos meses recentes da janela comercial.
+    sales = dataset["Vendas_24m"]
+    billed = sales[pd.to_numeric(sales["Quantidade faturada"], errors="coerce") > 0]
+    recent_months = load_commercial_thresholds(ROOT / "config/commercial_thresholds.json")["recent_months"]
+    recent_start = (pd.Timestamp(latest).to_period("M") - (recent_months - 1)).start_time
     rows = []
-    for _, partner in partners[partners["Tipo"] != "Canal direto"].iterrows():
-        subset = sell_out[sell_out["Cliente"] == partner["Código"]]
-        observed = int(subset["SKU"].nunique())
+    for _, partner in partners.iterrows():
+        is_direct = partner["Tipo"] == "Canal direto"
+        if is_direct:
+            subset = billed[billed["Cliente/Canal"] == partner["Código"]]
+            observed = int(subset.loc[(subset["Mês"] >= recent_start) & (subset["Mês"] <= latest), "SKU"].nunique())
+        else:
+            subset = sell_out[sell_out["Cliente"] == partner["Código"]]
+            observed = int(subset["SKU"].nunique())
         coverage = observed / total_skus if total_skus else 0
         rows.append(
             {
                 "partner": partner["Código"],
                 "name": partner["Nome fictício"],
+                "type": partner["Tipo"],
+                "visibility_source": "faturamento_direto" if is_direct else "sell_out_parceiro",
                 "observed_skus": observed,
                 "total_skus": total_skus,
                 "coverage": coverage,
@@ -769,6 +956,7 @@ def b2b_visibility():
     return {
         "reference_month": latest.date().isoformat(),
         "partners": rows,
+        "journey": build_visibility_journey(dataset),
         "note": "Cobertura representa observação disponível; ausência não equivale a venda zero.",
         "classification_disclaimer": "O nível é uma classificação demonstrativa baseada em cobertura e atualidade. Não representa acordo comercial firmado.",
     }
@@ -786,6 +974,7 @@ def capacity_plan_summary():
         "status_labels": plan["status_labels"],
         "assumptions": plan["assumptions"],
         "field_nature": plan["field_nature"],
+        "extension": plan.get("extension"),
         "requires_human_review": True,
     }
 
@@ -967,6 +1156,10 @@ app.include_router(create_partner_router(lambda: pipeline()[0], ROOT / "config/c
 from backend.direct_channels import create_direct_channel_router  # noqa: E402
 
 app.include_router(create_direct_channel_router(lambda: pipeline()[0], ROOT / "config/direct_channel_thresholds.json", _describe_error))
+# Etapa 16.2: alocação sugerida do estoque escasso por pedido, parceiro e região (leitura do cache do pipeline).
+from backend.allocation import create_allocation_router  # noqa: E402
+
+app.include_router(create_allocation_router(allocation, _describe_error))
 
 # Additive Week 4 validation view: read-only, reuses the cached pipeline and existing recommendations.
 from backend.validation import create_validation_router  # noqa: E402
@@ -982,6 +1175,8 @@ app.include_router(create_validation_router(
     recommendations=_all_operational_recommendations,
     supply_plans=supply_plans,
     capacity_plan=capacity_plan,
+    allocation=_allocation_or_none,
+    direct_channels=direct_channels,
     sku_detail=detail,
     source=SOURCE,
     config_file=ROOT / "config/validation_center.json",
@@ -1025,9 +1220,6 @@ app.include_router(create_partner_stock_projection_router(
 from backend.run_comparisons import create_run_comparison_router  # noqa: E402
 from caderno_inteligente.run_comparison import build_comparison_payload  # noqa: E402
 
-COMMERCIAL_THRESHOLDS_FILE = ROOT / "config/commercial_thresholds.json"
-
-
 def _comparison_payload():
     partner_result, partner_error, commercial = None, None, None
     try:
@@ -1039,6 +1231,17 @@ def _comparison_payload():
 
 
 app.include_router(create_run_comparison_router(_persistence))
+
+# Etapa 16.6: cobertura de regras (quanto cada regra e rótulo dispara nas saídas atuais e, se zero, por quê).
+from backend.rules_coverage import create_rules_coverage_router  # noqa: E402
+
+app.include_router(create_rules_coverage_router(
+    pipeline=pipeline,
+    forecast_items=forecast_summaries,
+    commercial=lambda: _enrich_challenge(build_partner_insights(pipeline()[0], load_commercial_thresholds(COMMERCIAL_THRESHOLDS_FILE))),
+    direct_channels=direct_channels,
+    describe_error=_describe_error,
+))
 
 # Fase 3: login e cadastro de SKU; só grava com DATA_SOURCE=banco.
 app.include_router(create_registry_router(

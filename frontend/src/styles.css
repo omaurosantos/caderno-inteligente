@@ -765,3 +765,18 @@ details.validation-case[open] > summary { border-bottom: 1px solid var(--rule); 
   .table-shell { overflow: visible !important; }
   .tab-panel[hidden] { display: block !important; }
 }
+
+/* Etapa 16: capacidade estimada (além do calendário da base) sempre hachurada; avisos de qualidade; cobertura de regras */
+.badge-good-estimated, .badge-critical-estimated { border: 1px dashed currentColor; }
+.badge-good-estimated { background: repeating-linear-gradient(135deg, var(--ok-tint) 0 5px, var(--sheet) 5px 9px); color: var(--ok); }
+.badge-critical-estimated { background: repeating-linear-gradient(135deg, var(--urgent-tint) 0 5px, var(--sheet) 5px 9px); color: var(--urgent); }
+.week-estimated td { background: repeating-linear-gradient(135deg, var(--tint) 0 5px, var(--sheet) 5px 9px); }
+.estimated-swatch { display: inline-block; width: 22px; height: 12px; margin-right: var(--space-1); border: 1px dashed var(--graphite); background: repeating-linear-gradient(135deg, var(--tint) 0 4px, var(--sheet) 4px 7px); vertical-align: -1px; }
+.scenario-table caption, .warnings-table caption, .coverage-table caption, .sop-table caption { padding: var(--space-2) 0; color: var(--graphite); font-size: var(--text-meta); text-align: left; }
+.scenario-table td .badge { margin-right: var(--space-1); }
+.warnings-block { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.coverage-zero { display: flex; flex-direction: column; gap: 2px; }
+.coverage-zero small { max-width: none; white-space: normal; overflow: visible; }
+.coverage-table .is-zero td { background: var(--review-tint); }
+.coverage-table td:first-child small { white-space: normal; }
+.queue-table .queue-allocation { display: block; }

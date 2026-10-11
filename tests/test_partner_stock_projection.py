@@ -73,3 +73,14 @@ def test_real_data_projection_and_measured_errors():
         stock = item["current_stock"]
         expected = stock + item["scenarios"]["with_replenishment"]["monthly_sell_in"] - item["forecast_monthly_sell_out"]
         assert item["scenarios"]["with_replenishment"]["projected_stock"][0] == pytest.approx(expected, abs=0.2)
+
+
+def test_projection_by_pair_gives_days_quantity_and_aggregate_wape():
+    from caderno_inteligente.partner_stock_projection import projection_by_pair
+    pairs = projection_by_pair(_dataset([30.0] * 12, [20.0] * 12, [100.0] * 12), SETTINGS)
+    evidence = pairs[("KA-T1", "TEST-001")]
+    assert evidence["status"] == "ok" and evidence["nature"] == "estimado"
+    assert evidence["days_until_stockout_without_replenishment"] == 100.0
+    assert evidence["replenishment_to_target"] == 0.0 and evidence["sell_out_wape"] == 0.0
+    short = projection_by_pair(_dataset([30.0] * 3, [20.0] * 3, [100.0] * 3), SETTINGS)[("KA-T1", "TEST-001")]
+    assert short["status"] == "insufficient_data" and short["days_until_stockout_without_replenishment"] is None

@@ -84,10 +84,16 @@ def _holt_damped(history: pd.Series, targets: pd.PeriodIndex) -> list[float] | N
     return predictions
 
 
+def describe_seasonal_level(ratio_bounds: tuple[float, float]) -> str:
+    """Descrição do candidato `seasonal_level` com o limite da razão sazonal efetivo (não um texto fixo)."""
+    low, high = (f"{value:.1f}".replace(".", ",") for value in ratio_bounds)
+    return f"Mesmo mês do ano anterior, ajustado pelo crescimento do nível; razão limitada a {low}–{high}."
+
+
 def _seasonal_level(history: pd.Series, targets: pd.PeriodIndex) -> list[float] | None:
     """Mesmo mês do ano anterior, ajustado pelo crescimento do nível (média de 3 meses agora ÷ há um ano).
 
-    A razão sazonal de cada mês fica limitada a [0,5; 2,0] para um mês atípico do ano passado não dominar a previsão.
+    A razão sazonal de cada mês fica limitada pelos limites informados (padrão [0,5; 2,0]) para um mês atípico do ano passado não dominar a previsão.
     """
     return seasonal_level(history, targets, SEASONAL_RATIO_BOUNDS)
 
@@ -137,7 +143,7 @@ _CANDIDATES = (
     Candidate("seasonal_naive_12", MODEL_LABELS["seasonal_naive_12"], _seasonal_naive, 12, 2, "Repete o mesmo mês do ano anterior."),
     Candidate("ses", "Suavização exponencial simples", _ses, 6, 3, "Nível que dá mais peso aos meses recentes; o peso vem do erro do próprio treino."),
     Candidate("combo_ma_sn", "Média móvel + sazonal ingênuo", _combo_ma_sn, 12, 4, "Média simples da média móvel de 3 meses com o sazonal ingênuo de 12 meses."),
-    Candidate("seasonal_level", "Mês do ano anterior ajustado pelo nível", _seasonal_level, SEASONAL_LEVEL_MIN_HISTORY, 5, "Mesmo mês do ano anterior, ajustado pelo crescimento do nível; razão limitada a 0,5–2,0."),
+    Candidate("seasonal_level", "Mês do ano anterior ajustado pelo nível", _seasonal_level, SEASONAL_LEVEL_MIN_HISTORY, 5, describe_seasonal_level(SEASONAL_RATIO_BOUNDS)),
     Candidate("holt_damped", "Nível e tendência amortecida (Holt)", _holt_damped, 9, 6, "Nível mais tendência que perde força com o tempo."),
 )
 

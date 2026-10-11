@@ -110,7 +110,9 @@ def _with_pending(monkeypatch):
 
 def test_pending_cases_are_listed_but_not_counted_as_passed_or_failed(monkeypatch):
     real = TestClient(app).get("/api/validation/summary").json()["frozen_cases"]
-    assert real["pending"] == 0 and real["passed"] == real["total"] == 30
+    # Etapa 16: VC-31 liberado na 16.1 e VC-32 a VC-34 no fechamento da Onda 2 (16.2/16.3): nenhum caso pendente.
+    pending_ids = {item["id"] for item in real["items"] if item["result"] == "pendente"}
+    assert pending_ids == set() and real["failed"] == real["not_found"] == 0 and real["passed"] == real["total"] == 34
     _with_pending(monkeypatch)
     body = TestClient(app).get("/api/validation/summary").json()["frozen_cases"]
     items = {item["id"]: item for item in body["items"]}
@@ -168,4 +170,6 @@ def test_before_after_comparison_reports_the_stage_15_cases():
     assert "| `sem_acao_necessaria` | 30 | 0 |" in report
     assert "| KA-02 · CI-0009: ação comercial | `investigar_divergencia` | `conter_reposicao` |" in report
     assert "## Capacidade (depois)" in report
-    assert (ROOT / "docs/etapa-15/antes-depois.md").read_text(encoding="utf-8") == report
+    # O script é compartilhado com a Etapa 16 (título e frase de origem mudaram); as tabelas do relatório gravado continuam as mesmas.
+    saved = (ROOT / "docs/etapa-15/antes-depois.md").read_text(encoding="utf-8")
+    assert [line for line in saved.splitlines() if line.startswith("|")] == [line for line in report.splitlines() if line.startswith("|")]

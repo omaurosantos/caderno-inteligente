@@ -1,0 +1,11 @@
+{
+  "estimated_weight": 0.5,
+  "tier_rules": {
+    "production_window_weeks": 4
+  },
+  "abc_thresholds": {
+    "A": 0.8,
+    "B": 0.95
+  },
+  "abc_window_months": 12
+}

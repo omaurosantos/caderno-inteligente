@@ -1,3 +1,4 @@
+import type { AllocationRegions, AllocationResponse } from './types-allocation';
 import type { CommercialPage, CommercialRow, PartnerDetail, PartnerSummary } from './types-commercial';
 import type { ChannelFinding, DirectChannelDetail, DirectChannelsOverview } from './types-channels';
 import type { EventAnalysis } from './types-events';
@@ -6,6 +7,7 @@ import type { ModelBenchmark } from './types-model-benchmark';
 import type { ProductionPlan } from './types-production';
 import type { LoginResult, SessionUser, SkuFields, SkuRegistry, SkuSaved } from './types-registry';
 import type { RevenueForecast } from './types-revenue';
+import type { RulesCoverage } from './types-rules';
 import type { RunComparison } from './types-runs';
 import type { ValidationSummary } from './types-validation';
 import type { SystemInfo } from './hooks/useSystemInfo';
@@ -107,6 +109,10 @@ export const api = {
   productionPlan: (signal?: AbortSignal) => request<ProductionPlan>('/production-plan', { signal }),
   skuDetail: (sku: string, signal?: AbortSignal) => request<SkuDetail>(`/priorities/${encodeURIComponent(sku)}`, { signal }),
   system: (signal?: AbortSignal) => request<SystemInfo>('/system', { signal }),
+  /** Etapa 16.2: alocação sugerida; filtros opcionais `sku`, `regiao`, `cliente` (sku sem pedido aberto → 404). */
+  allocation: (query: URLSearchParams = new URLSearchParams(), signal?: AbortSignal) => request<AllocationResponse>(`/allocation${String(query) ? `?${query}` : ''}`, { signal }),
+  allocationRegions: (signal?: AbortSignal) => request<AllocationRegions>('/allocation/regions', { signal }),
+  rulesCoverage: (signal?: AbortSignal) => request<RulesCoverage>('/rules/coverage', { signal }),
   validationSummary: (signal?: AbortSignal) => request<ValidationSummary>('/validation/summary', { signal }),
   forecastLab: (signal?: AbortSignal) => request<ForecastLab>('/forecast-lab', { signal }),
   modelBenchmark: (signal?: AbortSignal) => request<ModelBenchmark>('/model-benchmark', { signal }),

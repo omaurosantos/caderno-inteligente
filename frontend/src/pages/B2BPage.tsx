@@ -4,6 +4,7 @@ import { api } from '../api';
 import { Alert, ErrorState, Icon, LoadingState, PageIntro } from '../components';
 import { CommercialMatrix, monthLabel, opportunityOrderLabels, sortOpportunities } from '../components/CommercialMatrix';
 import type { OpportunityOrder } from '../components/CommercialMatrix';
+import { RegionRisk } from '../components/RegionRisk';
 import { useApiResource } from '../hooks/useApiResource';
 import { usePageLoadStatus } from '../hooks/usePageLoadStatus';
 
@@ -23,6 +24,8 @@ export default function B2BPage({ refreshToken }: { refreshToken: number }) {
     return api.commercialRecommendations(filters, signal);
   }, [region, channel]);
   const opportunities = useApiResource(opportunitiesLoader, refreshToken);
+  const regionsLoader = useCallback((signal: AbortSignal) => api.allocationRegions(signal), []);
+  const regionRisk = useApiResource(regionsLoader, refreshToken).data;
   usePageLoadStatus(loading || opportunities.loading, error || opportunities.error, loadedAt);
   const update = (key: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next, { replace: true }); };
   const regions = useMemo(() => [...new Set((data?.items ?? []).map(p => p.region).filter((x): x is string => !!x))].sort(), [data]);
@@ -44,6 +47,7 @@ export default function B2BPage({ refreshToken }: { refreshToken: number }) {
       {params.size > 0 && <button className="secondary-button" onClick={() => setParams({}, { replace: true })}>Limpar filtros</button>}
     </div>
     {data.total > data.items.length && <Alert title="Lista limitada">Exibindo o primeiro lote de {data.items.length} parceiros. A API suporta paginação por limit/offset.</Alert>}
+    {regionRisk && <RegionRisk data={regionRisk} />}
     {sorted && opportunities.data ? <>
       {opportunities.data.total > opportunities.data.items.length && <Alert title="Ordenação do primeiro lote">A lista mostra {opportunities.data.items.length} de {opportunities.data.total} oportunidades e a ordem vale só para esse lote.</Alert>}
       <CommercialMatrix response={sorted} />

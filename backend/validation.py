@@ -7,6 +7,8 @@ from typing import Callable
 from fastapi import APIRouter, HTTPException
 
 from caderno_inteligente.action_labels import load_action_settings
+from caderno_inteligente.direct_channels import build_direct_channels, load_direct_channel_settings
+from caderno_inteligente.impact_metrics import addressed_value, sop_divergence
 from caderno_inteligente.partner_insights import build_partner_insights, load_commercial_thresholds
 from caderno_inteligente.rules import load_rule_thresholds
 from caderno_inteligente.validation_center import (
@@ -31,7 +33,8 @@ def _sha256(path: Path) -> str:
 
 
 def create_validation_router(*, pipeline: Callable, persistence: Callable, recommendations: Callable, sku_detail: Callable,
-                             supply_plans: Callable | None = None, capacity_plan: Callable | None = None,
+                             supply_plans: Callable | None = None, capacity_plan: Callable | None = None, allocation: Callable | None = None,
+                             direct_channels: Callable | None = None,
                              source: Path, config_file: Path, thresholds_file: Path, commercial_thresholds_file: Path,
                              challenge_actions_file: Path | None = None,
                              describe_error: Callable[[str, Exception], str] | None = None) -> APIRouter:
@@ -56,11 +59,23 @@ def create_validation_router(*, pipeline: Callable, persistence: Callable, recom
             analysis_time = summarize_analysis_time([], int(config["minimum_feedback_sample"]))
             analysis_time["note"] = "Persistência indisponível; o tempo de análise registrado não pôde ser consultado."
             feedback_available = False
+        records_missing = None
+        try:
+            feedback_records = persistence().list_feedback_records()
+        except Exception:
+            feedback_records = []
+            records_missing = "Persistência indisponível; as decisões registradas não puderam ser consultadas."
+        if direct_channels is not None:  # mesmo resultado em cache do pipeline (não recalcula por requisição)
+            channel_rows = direct_channels()["rows"]
+        else:
+            channel_rows = build_direct_channels(dataset, load_direct_channel_settings(commercial_thresholds_file.parent / "direct_channel_thresholds.json"))["rows"]
         cases = evaluate_frozen_cases(
             config, indicators=indicators, issues=issues, ranking=ranking, forecasts=forecasts,
             partner_items=partner_items, thresholds=load_rule_thresholds(thresholds_file), source_sha256=source_sha256,
             plans=None if supply_plans is None else supply_plans(),
             capacity=None if capacity_plan is None else capacity_plan(),
+            allocation=None if allocation is None else allocation(),
+            channel_rows=channel_rows,
             challenge_settings=None if challenge_actions_file is None else load_action_settings(challenge_actions_file),
         )
 
@@ -84,7 +99,7 @@ def create_validation_router(*, pipeline: Callable, persistence: Callable, recom
                      for item in cases["items"] if item["result"] in ("falhou", "nao_encontrado")]  # pendente não é falha
         failures += [{"area": "comportamento seguro", "description": f"{item['label']}: reprovado."} for item in safe if item["status"] == "reprovado"]
         failures += [{"area": "cobertura dos casos", "description": f"{item['id']} — {item['title']} usa entrada sintética: {item['origin_reason']}"}
-                     for item in cases["items"] if item["origin"] == "synthetic"]
+                     for item in cases["items"] if item["origin"] == "synthetic" and item["result"] != "pendente"]
         if not feedback_available:
             failures.append({"area": "tempo de análise", "description": "Persistência indisponível durante a consulta."})
 
@@ -94,6 +109,8 @@ def create_validation_router(*, pipeline: Callable, persistence: Callable, recom
             "process_comparison": process_comparison(config, forecast_evaluation, analysis_time),
             "analysis_time": analysis_time,
             "forecast_evaluation": forecast_evaluation,
+            "addressed_value": addressed_value(feedback_records, ranking.to_dict("records"), missing_reason=records_missing),
+            "sop_divergence": sop_divergence(forecasts, dataset.get("Forecast_Comercial")),
             "frozen_cases": cases,
             "safe_behavior": safe,
             "known_failures": failures,

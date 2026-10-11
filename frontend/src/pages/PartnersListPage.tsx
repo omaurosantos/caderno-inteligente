@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api } from '../api';
-import { Alert, EmptyState, ErrorState, Icon, LoadingState, PageIntro, SectionCard } from '../components';
+import { api, dashboardReaders } from '../api';
+import { Alert, Badge, EmptyState, ErrorState, Icon, LoadingState, PageIntro, SectionCard } from '../components';
 import { ChallengeBadge } from '../components/ChallengeAction';
 import { monthLabel } from '../components/CommercialMatrix';
+import { VisibilityJourney } from '../components/VisibilityJourney';
 import { useApiResource } from '../hooks/useApiResource';
 import { usePageLoadStatus } from '../hooks/usePageLoadStatus';
 import { CHALLENGE_NAMES, displayShare } from './shared';
@@ -13,6 +14,8 @@ export default function PartnersListPage({ refreshToken }: { refreshToken: numbe
   const loader = useCallback((signal: AbortSignal) => api.partners(new URLSearchParams({ limit: '200' }), signal), []);
   const { data, error, loading, loadedAt, refresh } = useApiResource(loader, refreshToken);
   usePageLoadStatus(loading, error, loadedAt);
+  const journeyLoader = useCallback((signal: AbortSignal) => dashboardReaders.b2b(signal), []);
+  const journey = useApiResource(journeyLoader, refreshToken).data?.journey ?? null;
   const [params, setParams] = useSearchParams();
   const region = params.get('regiao') ?? '', channel = params.get('canal') ?? '', sort = params.get('ordem') ?? 'opportunities', label = params.get('rotulo') ?? '', search = params.get('busca') ?? '';
   const query = search.trim().toLocaleLowerCase('pt-BR');
@@ -36,12 +39,15 @@ export default function PartnersListPage({ refreshToken }: { refreshToken: numbe
       {params.size > 0 && <button className="secondary-button" onClick={() => setParams({}, { replace: true })}>Limpar filtros</button>}
     </div>
     {data.total > data.items.length && <Alert title="Lista limitada">Exibindo o primeiro lote de {data.items.length} parceiros. A API suporta paginação por limit/offset.</Alert>}
+    {journey && <VisibilityJourney journey={journey} />}
     <SectionCard title="Parceiros e canais">
-      {!listed.length ? <EmptyState title="Nenhum parceiro neste filtro" description="Ajuste região e canal. Ausência de informação não significa venda zero." /> : <div className="table-shell" tabIndex={0} role="region" aria-label="Parceiros; role horizontalmente para ver todas as colunas"><table className="data-table responsive-table"><thead><tr><th>Parceiro</th><th>Cobertura de dados de sell-out</th><th>Oportunidades</th><th>Sem dados suficientes</th><th><span className="sr-only">Abrir</span></th></tr></thead><tbody>{listed.map(p => <tr key={p.code}>
+      {!listed.length ? <EmptyState title="Nenhum parceiro neste filtro" description="Ajuste região e canal. Ausência de informação não significa venda zero." /> : <div className="table-shell" tabIndex={0} role="region" aria-label="Parceiros; role horizontalmente para ver todas as colunas"><table className="data-table responsive-table"><thead><tr><th>Parceiro</th><th>Visibilidade da venda</th><th>Oportunidades</th><th>Sem dados suficientes</th><th><span className="sr-only">Abrir</span></th></tr></thead><tbody>{listed.map(p => <tr key={p.code}>
         <td data-label="Parceiro"><strong>{p.name}</strong><small>{p.region ?? 'Região ausente'} · {p.channel ?? 'Canal ausente'}</small><ChallengeBadge action={p.challenge_action} /></td>
-        <td data-label="Cobertura de dados">{displayShare(p.coverage)}</td>
-        <td data-label="Oportunidades">{p.action_counts.avaliar_reposicao}</td>
-        <td data-label="Sem dados">{p.quality_counts.insufficient}</td>
+        {p.visibility_source === 'faturamento_direto'
+          ? <td data-label="Visibilidade da venda"><Badge tone="ok">Venda direta</Badge><small>observada no faturamento</small></td>
+          : <td data-label="Visibilidade da venda">{displayShare(p.coverage)}<small>sell-out do parceiro</small></td>}
+        <td data-label="Oportunidades">{p.visibility_source === 'faturamento_direto' ? 'Não se aplica' : p.action_counts.avaliar_reposicao}</td>
+        <td data-label="Sem dados">{p.visibility_source === 'faturamento_direto' ? 'Não se aplica' : p.quality_counts.insufficient}</td>
         <td className="cell-action"><Link className="secondary-button" to={`/parceiros/${encodeURIComponent(p.code)}`} aria-label={`Abrir parceiro ${p.name} e evidências`}>Abrir</Link></td>
       </tr>)}</tbody></table></div>}
     </SectionCard>

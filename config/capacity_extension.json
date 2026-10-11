@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "method": "media_compromissos_8_semanas",
+  "scenario": "central",
+  "lookback_weeks": 8,
+  "conservative_method": "minimo_disponivel_observado"
+}

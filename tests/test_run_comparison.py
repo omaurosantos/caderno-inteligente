@@ -145,3 +145,71 @@ def test_sqlite_migrates_legacy_runs_table_additively(tmp_path):
     assert listed[new_id]["comparison_schema_version"] == 1
     assert get_run(db, 1)["comparison"] is None
     assert get_run(db, new_id)["comparison"] == {"schema_version": 1}
+
+
+# ---------------------------------------------------------------- Etapa 16.3: posição por faixa, valor e sinais
+
+
+def _ranked(sku, priority, score, tier, observed, estimated=None, signals=("A",), label=None):
+    present = [value for value in (observed, None if estimated is None else 0.5 * estimated) if value is not None]
+    return {**_item(sku, priority, score, signals=signals), "urgency_tier": tier, "urgency_label": label or f"Faixa {tier}",
+            "urgency_reason": f"motivo faixa {tier}",
+            "value_at_risk": {"observed": observed, "estimated": estimated, "weighted": sum(present) if present else None}}
+
+
+def test_tier_change_explains_position_change():
+    base = _run(1, [_ranked("X", 1, 10, 1, 5000.0), _ranked("Y", 2, 30, 2, None, 90000.0, signals=("A", "B"))], WEIGHTS)
+    target = _run(2, [_ranked("Y", 1, 30, 1, 1000.0, 90000.0, signals=("A", "B")), _ranked("X", 2, 10, 1, 5000.0)], WEIGHTS)
+    changed = {item["sku"]: item for item in compare_runs(base, target)["ranking"]["changed"]}
+    y = changed["Y"]
+    assert y["ranking_basis"] == "faixa_e_valor" and y["position_driver"] == "faixa"
+    assert y["tier_change"] == {"base": 2, "target": 1, "base_label": "Faixa 2", "target_label": "Faixa 1"}
+    assert y["explanation"][0].startswith("Faixa de urgência mudou de 2 (Faixa 2) para 1 (Faixa 1)")
+    assert "motivo faixa 1" in y["explanation"][0]
+    assert y["target"]["urgency_tier"] == 1 and y["base"]["value_at_risk"]["estimated"] == 90000.0
+    # X não mudou de faixa nem de valor; caiu porque Y entrou na faixa 1 com valor maior
+    assert changed["X"]["position_driver"] == "outros_skus" and "outros SKUs" in changed["X"]["explanation"][0]
+
+
+def test_value_change_within_tier_is_decomposed():
+    base = _run(1, [_ranked("X", 1, 10, 1, 8000.0, 2000.0), _ranked("Y", 2, 10, 1, 5000.0)], WEIGHTS)
+    target = _run(2, [_ranked("Y", 1, 10, 1, 12000.0), _ranked("X", 2, 10, 1, 8000.0, 2000.0)], WEIGHTS)
+    result = compare_runs(base, target)
+    y = next(item for item in result["ranking"]["changed"] if item["sku"] == "Y")
+    assert y["position_driver"] == "valor" and y["tier_change"] is None
+    assert y["value_change"] == {"base": 5000.0, "target": 12000.0, "delta": 7000.0, "observed_delta": 7000.0, "estimated_delta": None}
+    assert y["explanation"][0] == "Mesma faixa (1); o valor em risco ponderado mudou de R$ 5,0 mil para R$ 12,0 mil (observado +R$ 7,0 mil, estimado n/d)."
+    assert result["ranking"]["summary"]["by_driver"] == {"faixa": 0, "valor": 1, "sinais": 0, "outros_skus": 1, "criterio": 0}
+
+
+def test_signals_only_break_ties_within_same_tier_and_value():
+    base = _run(1, [_ranked("X", 1, 10, 1, 100.0, signals=("A",)), _ranked("Y", 2, 5, 1, 100.0, signals=("B",))], WEIGHTS)
+    target = _run(2, [_ranked("Y", 1, 15, 1, 100.0, signals=("A", "B")), _ranked("X", 2, 10, 1, 100.0, signals=("A",))], WEIGHTS)
+    y = next(item for item in compare_runs(base, target)["ranking"]["changed"] if item["sku"] == "Y")
+    assert y["position_driver"] == "sinais" and "desempatou" in y["explanation"][0]
+    assert y["score_breakdown"] == [{"code": "A", "change": "adicionado", "base_weight": None, "target_weight": 10, "delta": 10}]
+
+
+def test_value_change_without_position_change_is_reported():
+    base = _run(1, [_ranked("X", 1, 10, 1, 100.0)], WEIGHTS)
+    target = _run(2, [_ranked("X", 1, 10, 1, 300.0)], WEIGHTS)
+    x = compare_runs(base, target)["ranking"]["changed"][0]
+    assert x["position_delta"] == 0 and x["position_driver"] == "valor"
+
+
+def test_legacy_snapshot_against_new_one_flags_the_criterion_change():
+    legacy = _run(1, [_item("X", 1, 20, signals=("A", "B")), _item("Y", 2, 10, signals=("A",))], WEIGHTS)
+    current = _run(2, [_ranked("Y", 1, 10, 1, 900.0), _ranked("X", 2, 15, 2, None, 100.0, signals=("A", "B"))], WEIGHTS)
+    result = compare_runs(legacy, current)
+    assert result["ranking"]["available"]
+    y = next(item for item in result["ranking"]["changed"] if item["sku"] == "Y")
+    assert y["ranking_basis"] == "misto" and y["position_driver"] == "criterio"
+    assert "mudança de critério" in y["explanation"][0]
+
+
+def test_two_legacy_snapshots_keep_the_weight_explanation():
+    base = _run(1, [_item("X", 1, 5, signals=("B",))], WEIGHTS)
+    target = _run(2, [_item("NEW", 1, 10, signals=("A",)), _item("X", 2, 5, signals=("B",))], WEIGHTS)
+    x = compare_runs(base, target)["ranking"]["changed"][0]
+    assert x["ranking_basis"] == "sinais" and x["position_driver"] == "outros_skus" and x["tier_change"] is None
+    assert x["explanation"] == ["Score igual; a posição mudou porque outros SKUs entraram, saíram ou mudaram de score."]

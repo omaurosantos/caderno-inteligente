@@ -1,7 +1,7 @@
 import { EmptyState, mainReason } from '../components';
 import { ChallengeBadge } from './ChallengeAction';
 import { EventBadge, mainAlert } from './EventAlerts';
-import { displayQuantity, formatDate, reasonNames } from '../pages/shared';
+import { displayCurrency, displayQuantity, formatDate, reasonNames } from '../pages/shared';
 import type { ForecastRecommendationSummary, Priority } from '../types';
 import type { EventItem } from '../types-events';
 
@@ -86,6 +86,37 @@ function shortfallReason(rec: ForecastRecommendationSummary['operational_recomme
   return `Falta a partir de ${formatDate(rec.first_shortfall_date)}`;
 }
 
+/** "Atender KA-02 antes de KA-05": a primeira frase do rótulo quando o SKU é disputado e a alavanca é alocar. */
+export function allocationHeadline(action: ForecastRecommendationSummary['challenge_action'] | undefined) {
+  if (!action || action.lever !== 'alocar') return undefined;
+  return /^Atender\s.+?\santes de\s[^.]+\./.exec(action.reason)?.[0];
+}
+
+/** Motivo principal: faixa e valor em risco (priority_reason). Sem ele (resposta antiga), vale a falta datada ou o sinal mais pesado. */
+function queueReason(row: QueueRow, rec: Recommendation | undefined, signal: { code: string; description: string } | undefined) {
+  return row.priority?.priority_reason || shortfallReason(rec) || (signal ? (reasonNames[signal.code] ?? signal.description) : undefined);
+}
+
+/** Detalhe do cálculo: pontuação de sinais, valor observado × estimado e a curva ABC medida × a do cadastro. */
+export function reasonDetail(row: QueueRow) {
+  const risk = row.priority?.value_at_risk ?? row.forecast?.value_at_risk;
+  const measured = row.priority?.abc_measured ?? row.forecast?.abc_measured;
+  const registry = row.priority?.abc_registry ?? row.forecast?.abc_registry;
+  const score = row.priority?.attention_score ?? row.forecast?.attention_score;
+  const parts = [
+    risk && `Valor em risco: ${displayCurrency(risk.observed)} observado em pedidos e ${displayCurrency(risk.estimated)} estimado pela previsão.`,
+    measured ? `Curva ABC medida pelo faturamento dos últimos 12 meses: ${measured}${registry && registry !== measured ? `; no cadastro está ${registry}` : registry ? ' (igual ao cadastro)' : ''}.` : registry ? `Curva ABC do cadastro: ${registry}; a medida não está disponível.` : undefined,
+    typeof score === 'number' && `Pontuação dos sinais: ${score} (desempate dentro da faixa).`,
+  ].filter((item): item is string => !!item);
+  return parts.join(' ');
+}
+
+/** Faixa em destaque e valor em risco ao lado: "Pedido confirmado sem cobertura · R$ 63,9 mil em risco (KA-05, KA-02)". */
+function ReasonText({ text }: { text: string }) {
+  const [head, ...rest] = text.split(' · ');
+  return rest.length ? <><strong>{head}</strong> <span>{rest.join(' · ')}</span></> : <>{text}</>;
+}
+
 export function OperationalQueueTable({ rows, onSelect, weights, eventsBySku, forecastsLoaded, prioritiesLoaded }: {
   rows: QueueRow[];
   onSelect: (row: QueueRow) => void;
@@ -105,23 +136,28 @@ export function OperationalQueueTable({ rows, onSelect, weights, eventsBySku, fo
         const event = eventsBySku.get(row.sku);
         const hasEvent = !!(event && mainAlert(event.alerts));
         const texts = exceptionTexts(row);
+        const detail = reasonDetail(row);
+        const allocation = allocationHeadline(row.forecast?.challenge_action);
+        const text = queueReason(row, rec, reason);
         const urgency = urgencyOf(row, reason?.severity, texts.length + (hasEvent ? 1 : 0));
         const textTone = !rec || rec.action === 'sem_acao_necessaria' ? 'is-muted-text' : urgency === 'urgent' ? 'is-urgent-text' : urgency === 'review' ? 'is-review-text' : '';
         return <tr key={row.sku} className={`is-${urgency}`}>
           <td className="queue-sku" data-label="SKU">
-            <span className={`rank ${row.position !== null && row.position <= 3 ? 'top' : ''}`} title="Posição na fila de atenção">{row.position ?? '–'}</span>
+            <span className={`rank ${row.position !== null && row.position <= 3 ? 'top' : ''}`} title={`Posição na fila de atenção. ${detail}`.trim()}>{row.position ?? '–'}</span>
             <div><button type="button" className="link-button" onClick={() => onSelect(row)} aria-label={`Ver detalhes de ${row.sku}`}><strong>{row.sku}</strong></button><small>{row.product}</small></div>
           </td>
           <td className="queue-action" data-label="Ação sugerida">
             {rec ? <span className={textTone}>{rec.action_label}</span> : <span className="is-muted-text">{forecastsLoaded ? 'Sem previsão para este SKU' : 'Ação indisponível'}</span>}
             {row.forecast?.challenge_action?.code === 'priorizar_producao' && <> <ChallengeBadge action={row.forecast.challenge_action} /></>}
           </td>
-          <td className="queue-qty" data-label="Quantidade" title={rec?.planned_quantity_horizon ? `${displayQuantity(rec.planned_quantity_horizon)} un. planejadas no horizonte` : undefined}><strong>{displayQuantity(rec?.suggested_quantity)}</strong></td>
+          <td className="queue-qty" data-label="Quantidade" title={rec?.planned_quantity_horizon ? `${displayQuantity(rec.planned_quantity_horizon)} un. planejadas no horizonte` : undefined}><strong>{typeof rec?.suggested_quantity === 'number' ? displayQuantity(rec.suggested_quantity) : <><span className="sr-only">Não disponível</span><span aria-hidden="true">–</span></>}</strong></td>
           <td className="queue-reason" data-label="Motivo principal">
-            {shortfallReason(rec) ?? (reason ? (reasonNames[reason.code] ?? reason.description) : <span className="queue-none">{prioritiesLoaded ? 'Fora do ranking' : 'Indisponível'}</span>)}
+            {text ? (row.priority?.priority_reason ? <ReasonText text={text} /> : text) : <span className="queue-none">{prioritiesLoaded ? 'Fora do ranking' : 'Indisponível'}</span>}
+            {allocation && <strong className="queue-allocation"> {allocation}</strong>}
+            {detail && <span className="sr-only"> {detail}</span>}
           </td>
           <td className={`queue-exceptions ${texts.length || hasEvent ? '' : 'is-empty'}`} data-label="Exceções">
-            {texts.length || hasEvent ? <>{texts.join(' · ')}{texts.length > 0 && hasEvent && ' · '}{hasEvent && event && <EventBadge item={event} />}</> : <span className="queue-none" aria-label="Sem exceções">—</span>}
+            {texts.length || hasEvent ? <>{texts.join(', ')}{texts.length > 0 && hasEvent && ' · '}{hasEvent && event && <EventBadge item={event} />}</> : <span className="sr-only">Sem exceções</span>}
           </td>
         </tr>;
       })}</tbody>

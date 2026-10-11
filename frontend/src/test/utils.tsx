@@ -20,6 +20,9 @@ const ROUTES: Array<[string, RegExp]> = [
   ['partnerDetail', /^\/api\/partners\/[^/]+$/],
   ['partners', /^\/api\/partners$/],
   ['commercial', /^\/api\/commercial-recommendations$/],
+  ['allocationRegions', /^\/api\/allocation\/regions$/],
+  ['allocation', /^\/api\/allocation$/],
+  ['rulesCoverage', /^\/api\/rules\/coverage$/],
   ['skuDetail', /^\/api\/priorities\/.+$/],
   ['priorities', /^\/api\/priorities$/],
   ['overview', /^\/api\/overview$/],
@@ -49,6 +52,7 @@ const ROUTES: Array<[string, RegExp]> = [
 ];
 
 const DEFAULTS: Record<string, Value> = {
+  allocation: fx.allocation, allocationRegions: fx.allocationRegions, rulesCoverage: fx.rulesCoverage,
   validation: fx.validationSummary, forecastLab: fx.forecastLab, modelBenchmark: fx.modelBenchmark, runComparison: fx.runComparison, partnerSkus: fx.partnerRows, partnerDetail: fx.partnerDetail,
   partners: fx.partnersPage, commercial: fx.partnerRows, priorities: fx.priorities, overview: fx.overview, forecasts: fx.forecasts, revenueForecast: fx.revenueForecast, capacityPlan: fx.capacityPlan, productionPlan: fx.productionPlan, events: fx.eventAnalysis,
   directChannels: fx.directChannels, directChannel: fx.directChannelDetail, channelFindings: { findings: fx.channelFindings },

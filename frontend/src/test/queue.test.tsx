@@ -2,7 +2,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { joinQueue, rowNeedsAttention, sortQueue } from '../components/OperationalQueue';
-import { SKU_OK, SKU_SHORT, forecasts, priorities } from './fixtures';
+import { allocationHeadline } from '../components/OperationalQueue';
+import { SKU_OK, SKU_SHORT, challengeAllocate, forecasts, priorities } from './fixtures';
 import { currentLocation, fail, mockApi, renderApp } from './utils';
 
 const INTRO = 'Qual SKU analisar, o que fazer e quanto';
@@ -36,7 +37,7 @@ describe('fila operacional: página', () => {
     expect(headers).toEqual(['Posição e SKU', 'Ação sugerida', 'Quantidade sugerida (un.)', 'Motivo principal', 'Exceções']);
     const first = bodyRows()[0];
     expect(within(first).getByText('Produzir')).toBeInTheDocument();
-    expect(within(first).getByTitle('Posição na fila de atenção')).toHaveTextContent('1');
+    expect(within(first).getByTitle(/^Posição na fila de atenção/)).toHaveTextContent('1');
     // Previsão completa, cálculo e erro do modelo ficam no detalhe do SKU.
     expect(within(screen.getByRole('region', { name: /Fila operacional/ })).queryByRole('columnheader', { name: /Próximo mês/ })).not.toBeInTheDocument();
   });
@@ -103,5 +104,50 @@ describe('fila operacional: página', () => {
     expect(await screen.findByRole('heading', { level: 2, name: SKU_OK })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await waitFor(() => expect(currentLocation()).toBe('/fila?familia=Fam%C3%ADlia+A&todos=1'));
+  });
+});
+
+describe('fila operacional: faixa, valor e disputa (Etapa 16)', () => {
+  it('o motivo começa pela faixa e pelo valor em risco, sem coluna nova', async () => {
+    mockApi();
+    renderApp('/fila');
+    await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` });
+    const region = screen.getByRole('region', { name: /Fila operacional/ });
+    expect(within(region).getAllByRole('columnheader')).toHaveLength(5);
+    const reason = within(bodyRows()[0]).getByText('Pedido confirmado sem cobertura');
+    expect(reason.closest('td')).toHaveTextContent(/^Pedido confirmado sem cobertura R\$ 1\.4 mil em risco \(KA-T\)/);
+  });
+
+  it('o detalhe do cálculo traz ABC medida × cadastro, observado × estimado e a pontuação, sem aparecer como coluna', async () => {
+    mockApi();
+    renderApp('/fila');
+    await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` });
+    const rank = within(bodyRows()[0]).getByTitle(/^Posição na fila de atenção/);
+    expect(rank.getAttribute('title')).toMatch(/Curva ABC medida pelo faturamento dos últimos 12 meses: A; no cadastro está C/);
+    expect(rank.getAttribute('title')).toMatch(/observado em pedidos e .* estimado pela previsão/);
+    expect(rank.getAttribute('title')).toMatch(/Pontuação dos sinais: 29/);
+    // Leitor de tela recebe o mesmo texto no motivo.
+    expect(bodyRows()[0].querySelector('.queue-reason .sr-only')?.textContent).toMatch(/Curva ABC medida/);
+  });
+
+  it('SKU disputado mostra "Atender X antes de Y" no motivo', async () => {
+    mockApi({ forecasts: forecasts.map((item, index) => index === 0 ? { ...item, challenge_action: challengeAllocate } : item) });
+    renderApp('/fila');
+    await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` });
+    expect(within(bodyRows()[0]).getByText('Atender KA-T1 antes de KA-T2.')).toBeInTheDocument();
+    expect(within(bodyRows()[1]).queryByText(/Atender/)).not.toBeInTheDocument();
+  });
+
+  it('sem priority_reason (resposta antiga) mantém o motivo pelo sinal mais pesado', async () => {
+    mockApi({ priorities: priorities.map((item) => ({ ...item, priority_reason: undefined })) });
+    renderApp('/fila');
+    await screen.findByRole('button', { name: `Ver detalhes de ${SKU_OK}` });
+    expect(within(bodyRows()[1]).getByText(/Falta|cobertura|lead time/i)).toBeInTheDocument();
+  });
+
+  it('allocationHeadline só vale para a alavanca alocar', () => {
+    expect(allocationHeadline(challengeAllocate)).toBe('Atender KA-T1 antes de KA-T2.');
+    expect(allocationHeadline({ ...challengeAllocate, lever: 'antecipar_op' })).toBeUndefined();
+    expect(allocationHeadline(undefined)).toBeUndefined();
   });
 });

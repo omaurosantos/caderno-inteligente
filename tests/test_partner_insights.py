@@ -115,3 +115,63 @@ def test_threshold_file_matches_defaults():
 def test_registry_with_no_sell_out_is_not_declared_complete():
     result = build_partner_insights(source())
     assert next(p for p in result['partners'] if p['code'] == 'P2')['coverage'] == 0
+
+
+def direct_source(billed_months=3, quantity=50):
+    """P1 com um canal direto (D1) que só entra pela carteira; o faturamento é a venda ao consumidor."""
+    data = source()
+    data['Parceiros_Canais'] = pd.concat([data['Parceiros_Canais'], pd.DataFrame([{'Código': 'D1', 'Nome fictício': 'Loja', 'Tipo': 'Canal direto', 'Região': 'Sul', 'Canal principal': 'Site'}])], ignore_index=True)
+    data['Carteira_Pedidos'] = pd.concat([data['Carteira_Pedidos'], pd.DataFrame([{'Pedido': 'PED2', 'SKU': 'S1', 'Cliente/Canal': 'D1', 'Quantidade': 10, 'Data prometida': pd.Timestamp('2026-09-12'), 'Status': 'Confirmado'}])], ignore_index=True)
+    months = pd.date_range('2026-03-01', '2026-08-01', freq='MS')
+    data['Vendas_24m'] = pd.DataFrame([{'Mês': m, 'SKU': sku, 'Cliente/Canal': 'D1', 'Quantidade faturada': quantity if i >= len(months) - billed_months else 0}
+                                       for i, m in enumerate(months) for sku in ('S1', 'S2')])
+    return data
+
+
+def direct_row(data):
+    return next(r for r in build_partner_insights(data)['items'] if r['partner'] == 'D1')
+
+
+def test_direct_channel_with_recent_billing_is_observed_without_partner_stock():
+    result = build_partner_insights(direct_source())
+    row = next(r for r in result['items'] if r['partner'] == 'D1')
+    assert len(result['items']) == 3  # o conjunto de pares não muda: o canal entra só pela carteira
+    assert row['row_kind'] == 'direct' and row['visibility_source'] == 'faturamento_direto'
+    assert row['action'] == 'canal_direto' and row['data_quality'] == 'sufficient'
+    assert row['data_nature'] == 'Observado (faturamento direto)'
+    assert row['estimated_stock'] is None and row['coverage_days'] is None and row['stock_reason']
+    assert row['sell_out_recent'] == 150 and row['average_monthly_sell_out'] == 50 and row['sell_out_months'] == ['2026-06', '2026-07', '2026-08']
+    assert row['signals'] == [] and row['requires_human_review'] is True
+    assert first(direct_source())['row_kind'] == 'partner' and first(direct_source())['visibility_source'] == 'sell_out_parceiro'
+    summary = next(p for p in result['partners'] if p['code'] == 'D1')
+    assert summary['visibility_source'] == 'faturamento_direto'
+    assert summary['observed_skus'] == 2 and summary['coverage'] == 1.0 and summary['latest_sell_out_month'] == '2026-08'
+    assert next(p for p in result['partners'] if p['code'] == 'P1')['coverage'] == .5
+
+
+def test_direct_channel_without_recent_billing_stays_insufficient():
+    row = direct_row(direct_source(billed_months=2))
+    assert row['action'] == 'dados_insuficientes' and row['data_quality'] == 'insufficient'
+    assert row['missing_months'] == ['2026-06'] and row['data_nature'] is None
+    no_sales = direct_source()
+    del no_sales['Vendas_24m']
+    row = direct_row(no_sales)
+    assert row['action'] == 'dados_insuficientes' and row['sell_out_recent'] is None and row['average_monthly_sell_out'] is None
+
+
+def test_partner_without_sell_out_is_still_insufficient_next_to_direct_channel():
+    order_only = next(r for r in build_partner_insights(direct_source())['items'] if r['partner'] == 'P2')
+    assert order_only['row_kind'] == 'partner' and order_only['action'] == 'dados_insuficientes'
+
+
+def test_forward_projection_only_on_sufficient_partner_rows_and_never_breaks_analysis():
+    data = source(sales=60, stock=30)
+    proj = {('P1', 'S1'): {'status': 'ok', 'days_until_stockout_without_replenishment': 15.0, 'replenishment_to_target': 90.0, 'sell_out_wape': 0.26, 'reason': None, 'nature': 'estimado'}}
+    rows = {r['partner']: r for r in build_partner_insights(data, None, proj)['items']}
+    assert rows['P1']['forward_projection']['replenishment_to_target'] == 90.0
+    assert rows['P2']['data_quality'] == 'insufficient' and rows['P2']['forward_projection'] is None
+    assert all(r['forward_projection'] is None for r in build_partner_insights(data, None, None)['items'])
+    # "auto" com só 3 meses de histórico: o par fica sem projeção, mas a análise continua.
+    auto = first(data)
+    assert auto['action'] == 'avaliar_reposicao' and auto['forward_projection']['status'] == 'insufficient_data'
+    assert auto['forward_projection']['replenishment_to_target'] is None

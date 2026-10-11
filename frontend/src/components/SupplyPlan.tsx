@@ -22,8 +22,11 @@ function WeekRows({ weeks }: { weeks: Week[] }) {
   </tr>)}</>;
 }
 
-/** Etapa 15.3–15.5: o plano datado do SKU — cascata, ordens planejadas, ajustes de OP, pedidos afetados e projeção. */
-export function SupplyPlanBlock({ recommendation }: { recommendation: OperationalRecommendation }) {
+/**
+ * Etapa 15.3–15.5: o plano datado do SKU — cascata, ordens planejadas, ajustes de OP, pedidos afetados e projeção.
+ * Etapa 16.2: com alocação (`allocated`), os pedidos afetados ficam em "Quem atender primeiro"; a lista pela data prometida sairia com outras datas.
+ */
+export function SupplyPlanBlock({ recommendation, allocated = false }: { recommendation: OperationalRecommendation; allocated?: boolean }) {
   const { planned_orders: orders = [], op_adjustments: adjustments = [], affected_orders: late = [], projection = [], calculation: calc } = recommendation;
   const capacityOrders = recommendation.capacity?.orders ?? [];
   const firstWeeks = projection.slice(0, WEEKS_VISIBLE);
@@ -31,7 +34,8 @@ export function SupplyPlanBlock({ recommendation }: { recommendation: Operationa
   return <details className="detail-block" open>
     <summary>Plano de suprimento</summary>
     <p className="fact-line">Até {formatDate(String(calc.cover_end ?? ''))}: demanda {displayQuantity(calc.demand_to_cover)} + segurança {displayQuantity(calc.safety_stock_quantity)} − estoque {displayQuantity(calc.current_stock)} − OPs no prazo {displayQuantity(calc.open_production_quantity)} = <strong>{displayQuantity(calc.raw_quantity)} un.</strong> Reposição nova chega a partir de {formatDate(recommendation.earliest_arrival)}.</p>
-    {late.length > 0 && <ul className="plain-list">{late.map((order) => <li key={order.order}><strong>{order.order}</strong> ({order.client}): {displayQuantity(order.quantity)} un. para {formatDate(order.promised_date)}, {order.expected_date ? `atende em ${formatDate(order.expected_date)}` : 'sem cobertura no horizonte'}.</li>)}</ul>}
+    {late.length > 0 && allocated && <p className="fact-line">Pedidos afetados e ordem de atendimento: veja "Quem atender primeiro" no Resumo.</p>}
+    {late.length > 0 && !allocated && <ul className="plain-list">{late.map((order) => <li key={order.order}><strong>{order.order}</strong> ({order.client}): {displayQuantity(order.quantity)} un. para {formatDate(order.promised_date)}, {order.expected_date ? `atende em ${formatDate(order.expected_date)}` : 'sem cobertura no horizonte'}.</li>)}</ul>}
     {adjustments.length > 0 && <ul className="plain-list">{adjustments.map((item) => <li key={`${item.order}-${item.adjustment}`}><Badge tone={item.adjustment === 'antecipar' ? 'critical' : 'medium'}>{ADJUSTMENT[item.adjustment]} {item.order}</Badge> {item.adjustment === 'antecipar' ? `para ${formatDate(item.suggested_finish)}` : `de ${displayQuantity(item.quantity)} para ${displayQuantity(item.suggested_quantity)} un.`}</li>)}</ul>}
     {orders.length > 0 && <div className="table-shell" tabIndex={0} role="region" aria-label="Ordens planejadas"><table className="data-table">
       <thead><tr><th>Liberar até</th><th>Chegada</th><th>Quantidade</th><th>Capacidade</th></tr></thead>

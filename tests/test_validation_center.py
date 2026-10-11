@@ -3,8 +3,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from caderno_inteligente.action_labels import DEFAULT_SETTINGS as CHALLENGE_DEFAULTS
 from caderno_inteligente.validation_center import (
     _check,
+    _commercial_label,
     evaluate_forecasts,
     evaluate_frozen_cases,
     load_validation_config,
@@ -104,11 +106,74 @@ def test_synthetic_cases_run_through_existing_rules_and_recommendation():
     config = load_validation_config(CONFIG)
     synthetic = {**config, "cases": [case for case in config["cases"] if case["origin"] == "synthetic"]}
     result = evaluate_frozen_cases(synthetic, **_empty_context(), source_sha256=config["frozen_source_sha256"])
-    # 2 casos operacionais sintéticos + 11 casos dos rótulos de ação do desafio (VC-09 a VC-19)
-    assert result["total"] == 13 and result["passed"] == 13
+    # 2 casos operacionais sintéticos + 11 casos dos rótulos de ação do desafio (VC-09 a VC-19) + VC-34 (alocação, liberado na 16.2)
+    assert result["total"] == 14 and result["passed"] == 14 and result["pending"] == 0
     first = result["items"][0]
     assert {"RUP_LEAD_TIME", "RUP_SAFETY_STOCK", "ORDER_WITHOUT_PRODUCTION"} <= set(first["obtained"]["signals"])
     assert first["obtained"]["suggested_quantity"] == 500.0
+
+
+def test_synthetic_allocation_case_puts_the_partner_with_stock_buildup_last():
+    config = load_validation_config(CONFIG)
+    only = {**config, "cases": [case for case in config["cases"] if case["id"] == "VC-34"]}
+    item = evaluate_frozen_cases(only, **_empty_context(), source_sha256=config["frozen_source_sha256"])["items"][0]
+    assert item["result"] == "passou" and item["obtained"]["ranked_clients"] == ["KA-T2", "KA-T1"]
+    assert item["obtained"]["orders_with_reason"] == 2 and item["obtained"]["requires_human_review"] is True
+    without_coverage = copy.deepcopy(only)
+    without_coverage["cases"][0]["input"].pop("partner_coverage_days")   # sem cobertura o sinal do parceiro não vira ponto
+    tie = evaluate_frozen_cases(without_coverage, **_empty_context(), source_sha256=config["frozen_source_sha256"])["items"][0]
+    assert tie["obtained"]["ranked_clients"] == ["KA-T1", "KA-T2"] and tie["result"] == "falhou"   # empate total: vale o pedido
+
+
+def _plan(sku="SKU-A", **extra):
+    base = {"sku": sku, "reference_date": "2026-09-14", "discontinued": False, "affected_orders": [], "planned_orders": [], "op_adjustments": [],
+            "early_shortfall": False, "first_shortfall_date": None, "decision_window_end": "2026-10-12", "capacity": {"status": "ok"},
+            "open_orders": [], "supply_events": []}
+    return {**base, **extra}
+
+
+def test_base_allocation_case_reads_the_pipeline_allocation_or_rebuilds_it_from_the_plan():
+    plan = _plan(open_orders=[{"order": "P1", "client": "KA-01", "quantity": 100.0, "promised_date": "2026-09-20"},
+                              {"order": "P2", "client": "KA-02", "quantity": 100.0, "promised_date": "2026-09-21"}],
+                 supply_events=[{"date": "2026-09-14", "quantity": 50.0, "source": "estoque", "ref": None}])
+    plan.pop("affected_orders")   # sem pedidos afetados no plano, a alocação usa o FIFO por data prometida
+    case = {"id": "VC-X", "title": "t", "kind": "allocation", "origin": "base", "sku": "SKU-A", "limitation": "l",
+            "expected": {"contested": True, "ranked_clients": {"includes": ["KA-01", "KA-02"]}, "orders_with_reason": {"positive": True}, "requires_human_review": True}}
+    config = {**load_validation_config(CONFIG), "cases": [case]}
+    rebuilt = evaluate_frozen_cases(config, **_empty_context(), source_sha256="x", plans={"SKU-A": plan})["items"][0]
+    assert rebuilt["result"] == "passou" and rebuilt["obtained"]["allocation_source"].startswith("recalculada")
+    given = {"requires_human_review": True, "skus": {"SKU-A": {"contested": True, "orders": [{"client": "KA-02", "reason": "r"}, {"client": "KA-01", "reason": "r"}],
+                                                               "first_client": "KA-02", "last_client": "KA-01", "decision_text": "d"}}}
+    piped = evaluate_frozen_cases(config, **_empty_context(), source_sha256="x", plans={"SKU-A": plan}, allocation=given)["items"][0]
+    assert piped["obtained"]["allocation_source"] == "pipeline" and piped["obtained"]["ranked_clients"] == ["KA-02", "KA-01"]
+    assert evaluate_frozen_cases(config, **_empty_context(), source_sha256="x")["items"][0]["result"] == "nao_encontrado"
+
+
+def test_outranks_higher_value_active_compares_active_skus_of_the_same_tier():
+    from caderno_inteligente.validation_center import _operational_output, _outranks_higher_value_active
+    ranking = pd.DataFrame([
+        {"sku": "OLD", "priority": 1, "urgency_tier": 1, "value_at_risk": {"observed": 100.0, "estimated": None}},
+        {"sku": "ACT", "priority": 2, "urgency_tier": 1, "value_at_risk": {"observed": 900.0, "estimated": 50.0}},
+        {"sku": "LOW", "priority": 3, "urgency_tier": 2, "value_at_risk": {"observed": 5000.0, "estimated": None}},
+    ])
+    plans = {"OLD": _plan("OLD", discontinued=True), "ACT": _plan("ACT"), "LOW": _plan("LOW")}
+    rows = ranking.to_dict("records")
+    assert _outranks_higher_value_active(rows[0], ranking, plans) is True          # ACT, ativo e de valor maior, está atrás na mesma faixa
+    assert _outranks_higher_value_active(rows[0], ranking, {**plans, "ACT": _plan("ACT", discontinued=True)}) is False
+    assert _outranks_higher_value_active(rows[1], ranking, plans) is False         # LOW é de outra faixa
+    assert _outranks_higher_value_active(None, ranking, plans) is None
+    indicator = {"minimum_lot": 100, "average_sales_per_day": 10, "safety_stock_days": 10, "current_stock": 5000, "production_order_quantity": 0,
+                 "backlog_order_quantity": 0, "has_sell_out": True}
+    legacy = _operational_output(indicator, {"status": "ok", "forecast_next_month": 10, "forecast_confidence": "alta"}, [], None)
+    assert legacy["urgency_tier"] is None and legacy["lever"] is None and legacy["outranks_higher_value_active"] is None
+
+
+def test_direct_channel_row_uses_the_api_channel_label_and_falls_back_to_the_commercial_branch():
+    row = {"partner": "E-commerce", "sku": "CI-0009", "row_kind": "direct", "action": "canal_direto", "data_quality": "sufficient", "signals": []}
+    channel = {"sku": "CI-0009", "suggestion": {"code": "investigar_queda", "label": "Investigar queda", "reason": "Queda."}, "signals": ["DECLINING"]}
+    assert _commercial_label(row, CHALLENGE_DEFAULTS, {"E-commerce": [channel]})["code"] == "investigar"
+    assert _commercial_label(row, CHALLENGE_DEFAULTS, {"E-commerce": []})["code"] == "monitorar"
+    assert _commercial_label(row, CHALLENGE_DEFAULTS, None)["code"] == "monitorar"
 
 
 def test_failed_and_missing_cases_are_reported_not_hidden():
