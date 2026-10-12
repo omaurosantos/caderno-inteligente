@@ -4,6 +4,7 @@ import type { AllocationRegions, AllocationResponse, AllocationSku } from '../ty
 import type { RulesCoverage } from '../types-rules';
 import type { CommercialPage, CommercialRow, ForwardProjection, PartnerDetail, PartnerSummary } from '../types-commercial';
 import type { ChallengeAction } from '../types-actions';
+import type { CollaborationOverview } from '../types-collaboration';
 import type { ChannelFinding, ChannelSkuRow, ChannelSummary, DirectChannelDetail, DirectChannelsOverview } from '../types-channels';
 import type { EventAlert, EventAnalysis, EventItem, EventScenario } from '../types-events';
 import type { ForecastLab, SensitivityCell } from '../types-forecast-lab';
@@ -740,4 +741,434 @@ export const validationSummaryPreviousBase: ValidationSummary = {
         adjustment: 'Nenhum ajuste realizado. O caso foi congelado sobre a base anterior e não é avaliado nem contado com a base ativa.' },
     ],
   },
+};
+
+/** Programa de Colaboração: recorte (2 parceiros) da resposta real de /api/collaboration. */
+export const collaboration: CollaborationOverview = {
+  "reference_month": "2026-08",
+  "status": "proposta_a_validar",
+  "note": "Pesos, limiares e níveis são proposta do grupo, ainda não validada com parceiros. Não representam acordo comercial nem concessão.",
+  "levels": [
+    {
+      "level": 1,
+      "name": "Essencial",
+      "gives": "Sell-out periódico por SKU. Contrapartida potencial: desempenho, giro e recomendações básicas de mix e reposição.",
+      "min_completeness": 0.01,
+      "min_frequency": 0.75,
+      "min_index": 0.0,
+      "requires_stock_position": false
+    },
+    {
+      "level": 2,
+      "name": "Conectado",
+      "gives": "Sell-out mais frequente e posição de estoque por SKU. Contrapartida potencial: reposição, risco de ruptura ou excesso, mix e ações comerciais direcionadas.",
+      "min_completeness": 0.4,
+      "min_frequency": 0.75,
+      "min_index": 0.6,
+      "requires_stock_position": true
+    },
+    {
+      "level": 3,
+      "name": "Estratégico",
+      "gives": "Sell-out e estoque com mais frequência, abrangência e consistência. Contrapartida potencial: planejamento colaborativo e recomendações antecipadas.",
+      "min_completeness": 0.8,
+      "min_frequency": 0.9,
+      "min_index": 0.8,
+      "requires_stock_position": true
+    }
+  ],
+  "weights": {
+    "completeness": 0.25,
+    "freshness": 0.15,
+    "frequency": 0.15,
+    "consistency": 0.2,
+    "quality": 0.15,
+    "continuity": 0.1
+  },
+  "partners": [
+    {
+      "code": "KA-01",
+      "name": "Papelaria Horizonte",
+      "type": "Parceiro varejista",
+      "region": "Sudeste",
+      "size": "Grande",
+      "level": 1,
+      "level_name": "Essencial",
+      "index": 0.8,
+      "stock_position": "estimada",
+      "observed_skus": 10,
+      "total_skus": 50,
+      "dimensions": [
+        {
+          "key": "completeness",
+          "label": "Completude",
+          "value": 0.2,
+          "weight": 0.25,
+          "basis": "10 SKUs com sell-out de 50 do catálogo",
+          "nature": "calculado"
+        },
+        {
+          "key": "freshness",
+          "label": "Atualidade",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "último dado 0 mês(es) antes do mês mais recente da base; a base é mensal, então a latência em dias não é medida",
+          "nature": "calculado"
+        },
+        {
+          "key": "frequency",
+          "label": "Frequência",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "meses com dado nos últimos 12 por par parceiro–SKU",
+          "nature": "calculado"
+        },
+        {
+          "key": "consistency",
+          "label": "Consistência",
+          "value": 1.0,
+          "weight": 0.2,
+          "basis": "10 de 10 pares com estoque que fecha e divergência dentro do limite",
+          "nature": "calculado"
+        },
+        {
+          "key": "quality",
+          "label": "Qualidade",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "120 de 120 registros válidos (sem negativos, duplicidade ou dado não observado)",
+          "nature": "calculado"
+        },
+        {
+          "key": "continuity",
+          "label": "Continuidade",
+          "value": 1.0,
+          "weight": 0.1,
+          "basis": "sequência de meses sem falha até o mês mais recente, por par parceiro–SKU",
+          "nature": "calculado"
+        }
+      ],
+      "gaps": [
+        {
+          "criterion": "completeness",
+          "current": 0.2,
+          "required": 0.4,
+          "text": "Completude 20%, mínimo 40%"
+        },
+        {
+          "criterion": "stock_position",
+          "current": null,
+          "required": true,
+          "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+        }
+      ],
+      "next_level": "Conectado",
+      "scenarios": [
+        {
+          "level": 2,
+          "name": "Conectado",
+          "gives": "Sell-out mais frequente e posição de estoque por SKU. Contrapartida potencial: reposição, risco de ruptura ou excesso, mix e ações comerciais direcionadas.",
+          "gaps": [
+            {
+              "criterion": "completeness",
+              "current": 0.2,
+              "required": 0.4,
+              "text": "Completude 20%, mínimo 40%"
+            },
+            {
+              "criterion": "stock_position",
+              "current": null,
+              "required": true,
+              "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+            }
+          ],
+          "additional_skus": 10,
+          "rows_with_estimated_stock": 10,
+          "unlocked": {
+            "rows_without_data_now": 4,
+            "candidate_skus": [
+              {
+                "sku": "CI-0012",
+                "product": "Caderno Grande Azul",
+                "backlog_quantity": 663.0,
+                "orders": 1
+              },
+              {
+                "sku": "CI-0027",
+                "product": "Caderno A5 Rosa",
+                "backlog_quantity": 487.0,
+                "orders": 1
+              }
+            ],
+            "covered_backlog_quantity": 1938.0,
+            "covered_orders": 4
+          },
+          "nature": "calculado: efeito esperado sobre os dados da base, não garantido nem acordado com o parceiro"
+        },
+        {
+          "level": 3,
+          "name": "Estratégico",
+          "gives": "Sell-out e estoque com mais frequência, abrangência e consistência. Contrapartida potencial: planejamento colaborativo e recomendações antecipadas.",
+          "gaps": [
+            {
+              "criterion": "completeness",
+              "current": 0.2,
+              "required": 0.8,
+              "text": "Completude 20%, mínimo 80%"
+            },
+            {
+              "criterion": "stock_position",
+              "current": null,
+              "required": true,
+              "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+            }
+          ],
+          "additional_skus": 30,
+          "rows_with_estimated_stock": 10,
+          "unlocked": {
+            "rows_without_data_now": 4,
+            "candidate_skus": [
+              {
+                "sku": "CI-0012",
+                "product": "Caderno Grande Azul",
+                "backlog_quantity": 663.0,
+                "orders": 1
+              },
+              {
+                "sku": "CI-0027",
+                "product": "Caderno A5 Rosa",
+                "backlog_quantity": 487.0,
+                "orders": 1
+              }
+            ],
+            "covered_backlog_quantity": 1938.0,
+            "covered_orders": 4
+          },
+          "nature": "calculado: efeito esperado sobre os dados da base, não garantido nem acordado com o parceiro"
+        }
+      ],
+      "insufficient_rows": 4
+    },
+    {
+      "code": "KA-02",
+      "name": "Rede Ponto Criativo",
+      "type": "Parceiro varejista",
+      "region": "Sul",
+      "size": "Médio",
+      "level": 1,
+      "level_name": "Essencial",
+      "index": 0.78,
+      "stock_position": "estimada",
+      "observed_skus": 10,
+      "total_skus": 50,
+      "dimensions": [
+        {
+          "key": "completeness",
+          "label": "Completude",
+          "value": 0.2,
+          "weight": 0.25,
+          "basis": "10 SKUs com sell-out de 50 do catálogo",
+          "nature": "calculado"
+        },
+        {
+          "key": "freshness",
+          "label": "Atualidade",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "último dado 0 mês(es) antes do mês mais recente da base; a base é mensal, então a latência em dias não é medida",
+          "nature": "calculado"
+        },
+        {
+          "key": "frequency",
+          "label": "Frequência",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "meses com dado nos últimos 12 por par parceiro–SKU",
+          "nature": "calculado"
+        },
+        {
+          "key": "consistency",
+          "label": "Consistência",
+          "value": 0.9,
+          "weight": 0.2,
+          "basis": "9 de 10 pares com estoque que fecha e divergência dentro do limite",
+          "nature": "calculado"
+        },
+        {
+          "key": "quality",
+          "label": "Qualidade",
+          "value": 1.0,
+          "weight": 0.15,
+          "basis": "120 de 120 registros válidos (sem negativos, duplicidade ou dado não observado)",
+          "nature": "calculado"
+        },
+        {
+          "key": "continuity",
+          "label": "Continuidade",
+          "value": 1.0,
+          "weight": 0.1,
+          "basis": "sequência de meses sem falha até o mês mais recente, por par parceiro–SKU",
+          "nature": "calculado"
+        }
+      ],
+      "gaps": [
+        {
+          "criterion": "completeness",
+          "current": 0.2,
+          "required": 0.4,
+          "text": "Completude 20%, mínimo 40%"
+        },
+        {
+          "criterion": "stock_position",
+          "current": null,
+          "required": true,
+          "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+        }
+      ],
+      "next_level": "Conectado",
+      "scenarios": [
+        {
+          "level": 2,
+          "name": "Conectado",
+          "gives": "Sell-out mais frequente e posição de estoque por SKU. Contrapartida potencial: reposição, risco de ruptura ou excesso, mix e ações comerciais direcionadas.",
+          "gaps": [
+            {
+              "criterion": "completeness",
+              "current": 0.2,
+              "required": 0.4,
+              "text": "Completude 20%, mínimo 40%"
+            },
+            {
+              "criterion": "stock_position",
+              "current": null,
+              "required": true,
+              "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+            }
+          ],
+          "additional_skus": 10,
+          "rows_with_estimated_stock": 10,
+          "unlocked": {
+            "rows_without_data_now": 8,
+            "candidate_skus": [
+              {
+                "sku": "CI-0014",
+                "product": "Caderno Escolar",
+                "backlog_quantity": 1327.0,
+                "orders": 2
+              },
+              {
+                "sku": "CI-0038",
+                "product": "Refil Planner",
+                "backlog_quantity": 682.0,
+                "orders": 1
+              }
+            ],
+            "covered_backlog_quantity": 4765.0,
+            "covered_orders": 9
+          },
+          "nature": "calculado: efeito esperado sobre os dados da base, não garantido nem acordado com o parceiro"
+        },
+        {
+          "level": 3,
+          "name": "Estratégico",
+          "gives": "Sell-out e estoque com mais frequência, abrangência e consistência. Contrapartida potencial: planejamento colaborativo e recomendações antecipadas.",
+          "gaps": [
+            {
+              "criterion": "completeness",
+              "current": 0.2,
+              "required": 0.8,
+              "text": "Completude 20%, mínimo 80%"
+            },
+            {
+              "criterion": "index",
+              "current": 0.78,
+              "required": 0.8,
+              "text": "Índice de Colaboração 78%, mínimo 80%"
+            },
+            {
+              "criterion": "stock_position",
+              "current": null,
+              "required": true,
+              "text": "Posição de estoque informada pelo parceiro (hoje o estoque do parceiro é estimado a partir de sell-in e sell-out)"
+            }
+          ],
+          "additional_skus": 30,
+          "rows_with_estimated_stock": 10,
+          "unlocked": {
+            "rows_without_data_now": 8,
+            "candidate_skus": [
+              {
+                "sku": "CI-0014",
+                "product": "Caderno Escolar",
+                "backlog_quantity": 1327.0,
+                "orders": 2
+              },
+              {
+                "sku": "CI-0038",
+                "product": "Refil Planner",
+                "backlog_quantity": 682.0,
+                "orders": 1
+              }
+            ],
+            "covered_backlog_quantity": 4765.0,
+            "covered_orders": 9
+          },
+          "nature": "calculado: efeito esperado sobre os dados da base, não garantido nem acordado com o parceiro"
+        }
+      ],
+      "insufficient_rows": 8
+    }
+  ],
+  "program": {
+    "eligible_partners": 5,
+    "participating_partners": 5,
+    "adhesion": 1.0,
+    "matrix_pairs_observed": 50,
+    "matrix_pairs_total": 250,
+    "matrix_coverage": 0.2,
+    "mean_index": 0.796,
+    "by_level": [
+      {
+        "level": 0,
+        "name": "Sem dado de sell-out",
+        "partners": 0
+      },
+      {
+        "level": 1,
+        "name": "Essencial",
+        "partners": 5
+      },
+      {
+        "level": 2,
+        "name": "Conectado",
+        "partners": 0
+      },
+      {
+        "level": 3,
+        "name": "Estratégico",
+        "partners": 0
+      }
+    ],
+    "unit_visibility_share": 0.7509,
+    "reconciliation": "Dois recortes, ambos corretos: 20% é a cobertura da matriz parceiro × SKU (só parceiros, sell-out informado); 75,1% é a parcela das unidades faturadas com venda ao consumidor observada, que inclui os canais diretos.",
+    "evolution": null,
+    "evolution_reason": "Há apenas uma fotografia da base: sem histórico de envios não existe evolução a mostrar. Esta é a linha de base do programa.",
+    "decisions": {
+      "available": false,
+      "reason": "O histórico de decisões não registra o parceiro nem se o dado do parceiro mudou a decisão; a métrica 'decisões que mudaram com o dado' ainda não é medida."
+    }
+  },
+  "field_nature": {
+    "index": "calculado a partir de sell-out observado pelo parceiro",
+    "level": "classificação demonstrativa por regras propostas, não acordo comercial",
+    "scenarios": "calculado: efeito esperado, não garantido",
+    "benefits": "hipótese a validar; sem promessa de concessão"
+  },
+  "limitations": [
+    "Pesos e limiares do índice e dos níveis são proposta a validar com parceiros.",
+    "A latência real do envio não é medida: a base é mensal.",
+    "Maturidade tecnológica e engajamento do parceiro não constam na base.",
+    "A posição de estoque do parceiro é estimada; nenhum parceiro informa estoque observado, por isso nenhum chega ao nível 2."
+  ],
+  "requires_human_review": true
 };

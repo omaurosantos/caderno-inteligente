@@ -46,7 +46,7 @@ describe('arquitetura de navegação final', () => {
     await screen.findByRole('heading', { level: 2, name: 'Parceiros e cobertura de dados' });
     expect(mainMenu().getByRole('link', { name: /Comercial/ })).toHaveAttribute('aria-current', 'page');
     const tabs = within(screen.getByRole('navigation', { name: 'Seções desta área' }));
-    expect(tabs.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([['Oportunidades', '/parceiros'], ['Parceiros', '/carteira'], ['Canais diretos', '/canais']]);
+    expect(tabs.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([['Oportunidades', '/parceiros'], ['Parceiros', '/carteira'], ['Canais diretos', '/canais'], ['Colaboração', '/colaboracao']]);
     expect(tabs.getByRole('link', { name: 'Parceiros' })).toHaveAttribute('aria-current', 'page');
   });
 
@@ -94,7 +94,7 @@ describe('endereços antigos continuam abrindo', () => {
   it.each([
     '/prioridades', '/prioridades?familia=Fam%C3%ADlia+A', '/previsoes', '/previsoes?acao=investigar_dados&ordem=suggested_quantity',
     '/fila', '/faturamento', '/cenarios', '/execucoes', '/execucoes?base=1&alvo=2', '/casos', '/casos?sku=TEST-001', '/decisoes', '/decisoes?sku=TEST-001',
-    '/qualidade', '/dados/atualizar', '/validacao', '/auditoria', '/parceiros', '/carteira', '/canais', '/parceiros?aba=parceiros', '/parceiros?aba=diretos', '/guia', `/skus/${SKU_OK}`, `/skus/${SKU_OK}?tab=impacto`,
+    '/qualidade', '/dados/atualizar', '/validacao', '/auditoria', '/parceiros', '/carteira', '/canais', '/colaboracao', '/parceiros?aba=parceiros', '/parceiros?aba=diretos', '/guia', `/skus/${SKU_OK}`, `/skus/${SKU_OK}?tab=impacto`,
   ])('%s não resulta em 404', async (path) => {
     mockApi();
     renderApp(path);

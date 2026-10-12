@@ -1257,6 +1257,12 @@ app.include_router(create_partner_router(lambda: pipeline()[0], ROOT / "config/c
 from backend.direct_channels import create_direct_channel_router  # noqa: E402
 
 app.include_router(create_direct_channel_router(lambda: pipeline()[0], ROOT / "config/direct_channel_thresholds.json", _describe_error))
+# Programa de Colaboração: índice, nível e simulação por parceiro (aditivo, somente leitura).
+from backend.collaboration import create_collaboration_router  # noqa: E402
+
+app.include_router(create_collaboration_router(
+    lambda: pipeline()[0], ROOT / "config/collaboration.json", ROOT / "config/commercial_thresholds.json",
+    lambda dataset: build_visibility_journey(dataset).get("observed_share"), _describe_error))
 # Etapa 16.2: alocação sugerida do estoque escasso por pedido, parceiro e região (leitura do cache do pipeline).
 from backend.allocation import create_allocation_router  # noqa: E402
 

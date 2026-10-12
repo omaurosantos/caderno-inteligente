@@ -55,6 +55,15 @@
       "columns": 5,
       "alerts": 1
     },
+    "/colaboracao": {
+      "fixed": 330,
+      "perRow": 60,
+      "perEvidence": 90,
+      "numbers": 40,
+      "blocks": 6,
+      "columns": 6,
+      "alerts": 1
+    },
     "/carteira": {
       "fixed": 120,
       "perRow": 20,

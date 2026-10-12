@@ -1,5 +1,6 @@
 import type { AllocationRegions, AllocationResponse } from './types-allocation';
 import type { CommercialPage, CommercialRow, PartnerDetail, PartnerSummary } from './types-commercial';
+import type { CollaborationOverview } from './types-collaboration';
 import type { ChannelFinding, DirectChannelDetail, DirectChannelsOverview } from './types-channels';
 import type { DatasetApplyOutcome, DatasetApplyResult, DatasetInfo, DatasetPreview, DatasetPreviewOutcome, DatasetVersions } from './types-dataset';
 import type { EventAnalysis } from './types-events';
@@ -188,6 +189,7 @@ export const api = {
   partnerSkus: (code: string, query: URLSearchParams, signal?: AbortSignal) => request<CommercialPage<CommercialRow>>(`/partners/${encodeURIComponent(code)}/skus?${query}`, { signal }),
   commercialRecommendations: (query: URLSearchParams, signal?: AbortSignal) => request<CommercialPage<CommercialRow>>(`/commercial-recommendations?${query}`, { signal }),
   forecasts: (signal?: AbortSignal) => request<ForecastRecommendationSummary[]>('/forecasts', { signal }),
+  collaboration: (signal?: AbortSignal) => request<CollaborationOverview>('/collaboration', { signal }),
   directChannels: (signal?: AbortSignal) => request<DirectChannelsOverview>('/direct-channels', { signal }),
   directChannel: (code: string, query: URLSearchParams, signal?: AbortSignal) => request<DirectChannelDetail>(`/direct-channels/${encodeURIComponent(code)}?${query}`, { signal }),
   channelFindings: (signal?: AbortSignal) => request<{ findings: ChannelFinding[] }>('/data-quality/channels', { signal }),

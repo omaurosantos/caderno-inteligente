@@ -23,6 +23,7 @@ Protótipo de apoio à decisão do PCP em uma cadeia B2B2C. Ele lê uma base XLS
 | Algum parceiro tem risco ou oportunidade? | Comercial: oportunidades ordenadas por menor cobertura de estoque, com a matriz parceiro–SKU com sell-in, sell-out, estoque estimado, estoque acumulando ("não repor") e sugestão comercial |
 | Quanto vamos faturar nos próximos meses? | Financeiro › Faturamento previsto: faturamento estimado (previsão em unidades × preço vigente), sempre rotulado como estimativa, com erro do teste e, no SKU, o cálculo |
 | Qual a ação do desafio para cada SKU, parceiro ou canal? | Fila operacional, Comercial e Canais diretos: rótulo (Produzir, Repor, Priorizar produção, Priorizar parceiro, Ampliar mix, Recomendar recompra, Monitorar, Investigar, Sem ação necessária) com evidências e filtro; a legenda está no Guia |
+| Quanto cada parceiro compartilha e o que muda se compartilhar mais? | Comercial › Colaboração: Índice de Colaboração (seis componentes), nível 1 a 3 por parceiro, simulação dos próximos níveis e linha de base do programa (adesão, cobertura 20% da matriz × 75,1% das unidades). Pesos, limiares e benefícios são proposta a validar |
 | Como vão os canais diretos? | Comercial › Canais diretos: faturamento observado, tendência, carteira e sugestão por SKU, sem estoque por canal; achados entre abas em Dados da planilha |
 | Que evento do calendário vem aí e quando decidir? | Início e Fila operacional: alertas de eventos com data de decisão (início − lead time); no SKU, evidência histórica e cenário com evento, sempre como estimativa |
 | O que o modelo de previsão faz e quais premissas usa? | Confiança › Modelo de previsão: o que é previsto, premissas, erro medido e comparação com outros modelos (statsforecast, scikit-learn, LightGBM, Prophet) |
@@ -101,6 +102,7 @@ O menu tem 8 entradas (Início, Planejamento, SKUs, Financeiro, Comercial, Acomp
 | `/skus/:sku` | Planejamento › Detalhe compartilhável: ação sugerida e botões "Registrar decisão" e "Criar caso" no topo; abas `?tab=resumo\|evidencias\|parceiros\|impacto` |
 | `/parceiros` | Comercial › Oportunidades, ordenadas por urgência; filtros `busca`, `regiao`, `canal`, `ordem`. Os endereços antigos `?aba=parceiros` e `?aba=diretos` redirecionam para `/carteira` e `/canais` |
 | `/carteira` | Comercial › Parceiros: cobertura de dados de sell-out e sugestões por parceiro; filtros `busca`, `regiao`, `canal`, `rotulo`, `ordem` |
+| `/colaboracao` | Comercial › Colaboração: linha de base do programa, índice e nível por parceiro, componentes do índice e simulação de níveis (`config/collaboration.json`) |
 | `/canais` e `/canais/:canal` | Comercial › Canais diretos (faturamento, tendência, carteira) e o detalhe por SKU de cada canal, com filtros `sinal` e `busca` |
 | `/parceiros/:codigo` | Matriz parceiro–SKU com evidências mensais na própria linha |
 | `/casos` | Acompanhamento › Casos (entrada do grupo): edição de status, responsável e prazo; filtros `status` e `responsavel`; aceita `?sku=` |
@@ -151,6 +153,7 @@ Durante o desenvolvimento, `npm run test:watch` reexecuta os testes do frontend.
 | Linha de base, casos congelados e histórico de ajustes da validação | `config/validation_center.json` |
 | Motor de previsão (cadeia oficial, horizonte, teto sazonal, protocolo de avaliação com pico) | `config/forecast_engine.json` |
 | Plano de suprimento (data de planejamento, janela de decisão, cobertura-alvo, excesso projetado). `reference_date` vale `"auto"`: a primeira semana de `Capacidade_Semanal` | `config/supply_plan.json` |
+| Programa de Colaboração (pesos do índice, limiares dos níveis 1 a 3, parceiros com posição de estoque informada; proposta a validar) | `config/collaboration.json` |
 | Alocação de estoque escasso (pesos de urgência, canal direto, cobertura e pedido pequeno; atendimento parcial) | `config/allocation.json` |
 | Valor em risco e faixas (peso da falta estimada, janela da faixa 2, limites da curva ABC medida) | `config/prioritization_impact.json` |
 | Envio de planilha pela tela (tamanho máximo de 4 MB, limites do ZIP e de linhas por aba, 20 versões, extensões aceitas). A leitura do arquivo usa `defusedxml` | `config/dataset_upload.json` |
