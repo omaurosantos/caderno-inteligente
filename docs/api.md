@@ -532,3 +532,11 @@ Avisos (não bloqueiam): `EXAMPLE_FILE`, `MACRO_IGNORED`, `REGISTRY_OVERRIDE`, `
 Quando a base ativa difere da congelada (hash do conteúdo), os casos congelados de origem `base` voltam com `result = "base_anterior"`, `status = "base_anterior"` e `status_label` ("base de 14/09/2026"), sem valor obtido, e saem da contagem. `frozen_cases` ganha `previous_base` (quantos casos). Os casos sintéticos continuam avaliados. Base empacotada: 34 de 34 e `previous_base = 0`. Com o exemplo aplicado: 14 de 34 contados e `previous_base = 20`.
 
 O `source_hash` gravado em `POST /api/runs` e usado na Central de validação, no Laboratório de previsão e no benchmark passa a ser o hash da **base ativa**, não o do XLSM empacotado.
+
+### `GET /api/collaboration`
+
+Programa de Colaboração com parceiros (somente leitura, aditivo; não altera ranking, regras nem previsão). Lê `config/collaboration.json`, marcado `proposta_a_validar`.
+
+- `partners[]`: só parceiros (canais diretos não participam). `level` (0 a 3) e `level_name`, `index` (0 a 1, média ponderada de `dimensions[]`: completude, atualidade, frequência, consistência, qualidade, continuidade, cada uma com `basis`), `gaps[]` (o que falta para o próximo nível) e `scenarios[]` (um por nível acima do atual: SKUs a acrescentar, linhas com estoque estimado que passariam a observado, carteira que passaria a ter dado e `candidate_skus`).
+- `program`: linha de base (`adhesion`, `matrix_coverage`, `mean_index`, `by_level`, `unit_visibility_share`, `reconciliation`). `evolution` é `null` com o motivo: não há histórico de envios. `decisions.available` é `false`: o histórico de decisões não registra o parceiro.
+- Regras: nível 2 e 3 exigem posição de estoque informada pelo parceiro (`stock_position_partners`, vazia hoje), por isso nenhum parceiro passa do nível 1. Sem sell-out, o parceiro fica no nível 0 com `index` nulo (lacuna, não venda zero). Latência real não é medida: a base é mensal.

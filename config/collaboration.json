@@ -1,0 +1,17 @@
+{
+  "status": "proposta_a_validar",
+  "note": "Pesos, limiares e níveis são proposta do grupo, ainda não validada com parceiros. Não representam acordo comercial nem concessão.",
+  "window_months": 12,
+  "freshness_zero_after_months": 3,
+  "divergence_limit": 0.5,
+  "stock_position_partners": [],
+  "weights": {"completeness": 0.25, "freshness": 0.15, "frequency": 0.15, "consistency": 0.2, "quality": 0.15, "continuity": 0.1},
+  "levels": [
+    {"level": 1, "name": "Essencial", "min_completeness": 0.01, "min_frequency": 0.75, "min_index": 0.0, "requires_stock_position": false,
+     "gives": "Sell-out periódico por SKU. Contrapartida potencial: desempenho, giro e recomendações básicas de mix e reposição."},
+    {"level": 2, "name": "Conectado", "min_completeness": 0.4, "min_frequency": 0.75, "min_index": 0.6, "requires_stock_position": true,
+     "gives": "Sell-out mais frequente e posição de estoque por SKU. Contrapartida potencial: reposição, risco de ruptura ou excesso, mix e ações comerciais direcionadas."},
+    {"level": 3, "name": "Estratégico", "min_completeness": 0.8, "min_frequency": 0.9, "min_index": 0.8, "requires_stock_position": true,
+     "gives": "Sell-out e estoque com mais frequência, abrangência e consistência. Contrapartida potencial: planejamento colaborativo e recomendações antecipadas."}
+  ]
+}

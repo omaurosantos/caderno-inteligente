@@ -46,7 +46,7 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 }
 
 /** Título (h1 e aba do navegador) de cada rota. Um nome só por página. */
-export const navigation: Array<{ id: PageId | 'dataset' | 'users'; path: string; label: string; description: string }> = [
+export const navigation: Array<{ id: PageId | 'dataset' | 'users' | 'collaboration'; path: string; label: string; description: string }> = [
   { id: 'guide', path: '/guia', label: 'Guia de uso', description: 'Como usar o protótipo' },
   { id: 'overview', path: '/', label: 'Início', description: 'O que olho primeiro' },
   { id: 'queue', path: '/fila', label: 'Fila operacional', description: 'Qual SKU analisar, o que fazer e quanto' },
@@ -58,6 +58,7 @@ export const navigation: Array<{ id: PageId | 'dataset' | 'users'; path: string;
   { id: 'dataset', path: '/dados/atualizar', label: 'Atualizar dados', description: 'Enviar planilha, prévia e versões da base' },
   { id: 'b2b', path: '/parceiros', label: 'Oportunidades', description: 'Onde repor, por parceiro e SKU' },
   { id: 'partners', path: '/carteira', label: 'Parceiros', description: 'Cobertura de dados por parceiro' },
+  { id: 'collaboration', path: '/colaboracao', label: 'Colaboração', description: 'Nível e índice de colaboração dos parceiros' },
   { id: 'channels', path: '/canais', label: 'Canais diretos', description: 'Faturamento observado' },
   { id: 'scenarios', path: '/cenarios', label: 'Cenários', description: 'Simulações sem alterar o ranking' },
   { id: 'runs', path: '/execucoes', label: 'Execuções', description: 'Histórico e comparação entre execuções' },
@@ -72,7 +73,7 @@ export const navigation: Array<{ id: PageId | 'dataset' | 'users'; path: string;
 export const menuGroups: Array<{ id: string; label: string; to: string; paths: string[]; hint: string }> = [
   { id: 'home', label: 'Início', to: '/', paths: ['/'], hint: 'O que olho primeiro?' },
   { id: 'production', label: 'Planejamento', to: '/fila', paths: ['/fila', '/capacidade', '/cenarios', '/prioridades', '/previsoes'], hint: 'Qual SKU, quanto produzir e se cabe na linha' },
-  { id: 'partners', label: 'Comercial', to: '/parceiros', paths: ['/parceiros', '/carteira', '/canais'], hint: 'Quem recebe primeiro e onde repor' },
+  { id: 'partners', label: 'Comercial', to: '/parceiros', paths: ['/parceiros', '/carteira', '/canais', '/colaboracao'], hint: 'Quem recebe primeiro e onde repor' },
   { id: 'finance', label: 'Financeiro', to: '/faturamento', paths: ['/faturamento'], hint: 'Quanto se estima faturar' },
   { id: 'skus', label: 'SKUs', to: '/skus', paths: ['/skus'], hint: 'A lista completa de SKUs' },
   { id: 'decisions', label: 'Acompanhamento', to: '/casos', paths: ['/decisoes', '/casos'], hint: 'O que foi decidido e o que segue aberto' },
@@ -81,7 +82,7 @@ export const menuGroups: Array<{ id: string; label: string; to: string; paths: s
 ];
 
 export const subNavigation: Record<string, Array<{ label: string; to: string }>> = {
-  partners: [{ label: 'Oportunidades', to: '/parceiros' }, { label: 'Parceiros', to: '/carteira' }, { label: 'Canais diretos', to: '/canais' }],
+  partners: [{ label: 'Oportunidades', to: '/parceiros' }, { label: 'Parceiros', to: '/carteira' }, { label: 'Canais diretos', to: '/canais' }, { label: 'Colaboração', to: '/colaboracao' }],
   backstage: [{ label: 'Auditoria', to: '/auditoria' }, { label: 'Execuções', to: '/execucoes' }, { label: 'Dados da planilha', to: '/qualidade' }, { label: 'Atualizar dados', to: '/dados/atualizar' }, { label: 'Usuários', to: '/usuarios' }],
   production: [{ label: 'Fila operacional', to: '/fila' }, { label: 'Capacidade', to: '/capacidade' }, { label: 'Cenários', to: '/cenarios' }],
   decisions: [{ label: 'Casos', to: '/casos' }, { label: 'Histórico de decisões', to: '/decisoes' }],

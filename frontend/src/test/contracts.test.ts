@@ -9,7 +9,7 @@ import contract from './contract-keys.json';
 const FIXTURES: Record<string, unknown> = {
   overview: fx.overview, priorities: fx.priorities, quality: fx.quality, config: fx.config, runs: fx.runs, b2b: fx.b2b,
   forecasts: fx.forecasts, revenueForecast: fx.revenueForecast, capacityPlan: fx.capacityPlan, productionPlan: fx.productionPlan, events: fx.eventAnalysis,
-  directChannels: fx.directChannels, directChannel: fx.directChannelDetail, channelFindings: { findings: fx.channelFindings }, skuDetail: fx.skuDetailOk, partners: fx.partnersPage, partnerDetail: fx.partnerDetail,
+  collaboration: fx.collaboration, directChannels: fx.directChannels, directChannel: fx.directChannelDetail, channelFindings: { findings: fx.channelFindings }, skuDetail: fx.skuDetailOk, partners: fx.partnersPage, partnerDetail: fx.partnerDetail,
   partnerSkus: fx.commercialRowsEtapa16, commercial: fx.commercialRowsEtapa16, validation: fx.validationSummary, forecastLab: fx.forecastLab, modelBenchmark: fx.modelBenchmark, runComparison: fx.runComparison, system: fx.system,
   allocation: fx.allocation, allocationRegions: fx.allocationRegions, rulesCoverage: fx.rulesCoverage,
   // Upload: a prévia aplicável com o erro endereçado da outra prévia cobre errors[] e engine.after no mesmo objeto.

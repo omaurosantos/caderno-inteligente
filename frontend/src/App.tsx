@@ -25,6 +25,7 @@ const CasesPage = lazy(() => import('./pages/CasesPage'));
 const QualityPage = lazy(() => import('./pages/QualityPage'));
 const B2BPage = lazy(() => import('./pages/B2BPage'));
 const PartnersListPage = lazy(() => import('./pages/PartnersListPage'));
+const CollaborationPage = lazy(() => import('./pages/CollaborationPage'));
 const DirectChannelsPage = lazy(() => import('./pages/DirectChannelsPage'));
 const PartnerDetailPage = lazy(() => import('./pages/PartnerDetailPage'));
 const ChannelDetailPage = lazy(() => import('./pages/ChannelDetailPage'));
@@ -133,6 +134,7 @@ function Shell({ user, onSignOut }: { user: string; onSignOut: () => void }) {
             <Route path="/qualidade" element={<PageResource key="QualityPage" fields={PAGE_FIELDS.QualityPage} refreshToken={refreshToken}>{(dashboard, reload) => <QualityPage data={dashboard} onSelect={selectSku} onRefresh={reload} />}</PageResource>} />
             <Route path="/parceiros" element={<LegacyPartnersRoute><B2BPage refreshToken={refreshToken} /></LegacyPartnersRoute>} />
             <Route path="/carteira" element={<PartnersListPage refreshToken={refreshToken} />} />
+            <Route path="/colaboracao" element={<CollaborationPage refreshToken={refreshToken} />} />
             <Route path="/canais" element={<DirectChannelsPage refreshToken={refreshToken} />} />
             <Route path="/parceiros/:codigo" element={<PartnerDetailPage key={location.pathname} refreshToken={refreshToken} />} />
             <Route path="/canais/:canal" element={<ChannelDetailPage key={location.pathname} refreshToken={refreshToken} />} />
